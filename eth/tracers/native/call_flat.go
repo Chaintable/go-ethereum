@@ -122,6 +122,10 @@ type flatCallTracerConfig struct {
 	IncludePrecompiles  bool `json:"includePrecompiles"`  // If true, call tracer includes calls to precompiled contracts
 }
 
+func NewFlatCallTracer(ctx *tracers.Context) (*tracers.Tracer, error) {
+	return newFlatCallTracer(ctx, nil)
+}
+
 // newFlatCallTracer returns a new flatCallTracer.
 func newFlatCallTracer(ctx *tracers.Context, cfg json.RawMessage) (*tracers.Tracer, error) {
 	var config flatCallTracerConfig
