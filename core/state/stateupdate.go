@@ -17,9 +17,13 @@
 package state
 
 import (
+	ptypes "github.com/Chaintable/pipeline/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/trienode"
+	"github.com/holiman/uint256"
 )
 
 // contractCode represents a contract code with associated metadata.
@@ -130,4 +134,56 @@ func newStateUpdate(originRoot common.Hash, root common.Hash, deletes map[common
 		codes:          codes,
 		nodes:          nodes,
 	}
+}
+
+func (s *stateUpdate) FillStateDiff(stateDiff *ptypes.BlockStorageDiff) {
+	for addrhash := range s.destructs {
+		stateDiff.DeletedAccounts = append(stateDiff.DeletedAccounts, addrhash)
+	}
+	for k, v := range s.accounts {
+		account, _ := types.FullAccount(v)
+		stateDiff.NewAccounts = append(stateDiff.NewAccounts, ptypes.NewAccount{
+			Address:  k,
+			Balance:  account.Balance,
+			Nonce:    uint64(account.Nonce),
+			CodeHash: common.BytesToHash(account.CodeHash),
+		})
+	}
+	for account, storage := range s.storages {
+		Values := make([]ptypes.IndexValuePair, 0, len(storage))
+		for index, v := range storage {
+			value := uint256.NewInt(0)
+			if len(v) > 0 {
+				_, content, _, err := rlp.Split(v)
+				if err != nil {
+					log.Error("Failed to split storage", "err", err)
+				}
+				value = uint256.NewInt(0).SetBytes(content)
+			}
+			Values = append(Values, ptypes.IndexValuePair{
+				Index: index,
+				Value: value,
+			})
+		}
+		stateDiff.StorageDiff = append(stateDiff.StorageDiff, ptypes.AccountStorageDiff{
+			Address: account,
+			Values:  Values,
+		})
+	}
+	for _, code := range s.codes {
+		stateDiff.NewCodes = append(stateDiff.NewCodes, ptypes.NewCode{
+			CodeHash: code.hash,
+			Code:     code.blob,
+		})
+	}
+	origin := s.originRoot
+	if origin == (common.Hash{}) {
+		origin = types.EmptyRootHash
+	}
+	root := s.root
+	if root == (common.Hash{}) {
+		root = types.EmptyRootHash
+	}
+	stateDiff.Hash = root
+	stateDiff.ParentHash = origin
 }

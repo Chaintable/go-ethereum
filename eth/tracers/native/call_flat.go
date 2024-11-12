@@ -25,12 +25,14 @@ import (
 	"strings"
 	"sync/atomic"
 
+	ptypes "github.com/Chaintable/pipeline/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/pipeline"
 )
 
 //go:generate go run github.com/fjl/gencodec -type flatCallAction -field-override flatCallActionMarshaling -out gen_flatcallaction_json.go
@@ -70,6 +72,8 @@ type flatCallFrame struct {
 	TransactionHash     *common.Hash    `json:"transactionHash"`
 	TransactionPosition uint64          `json:"transactionPosition"`
 	Type                string          `json:"type"`
+
+	EventPositions []ptypes.EventPosition `json:"-"`
 }
 
 type flatCallAction struct {
@@ -122,6 +126,7 @@ type flatCallTracer struct {
 type flatCallTracerConfig struct {
 	ConvertParityErrors bool `json:"convertParityErrors"` // If true, call tracer converts errors to parity format
 	IncludePrecompiles  bool `json:"includePrecompiles"`  // If true, call tracer includes calls to precompiled contracts
+	callTracerConfig
 }
 
 // newFlatCallTracer returns a new flatCallTracer.
@@ -135,7 +140,7 @@ func newFlatCallTracer(ctx *tracers.Context, cfg json.RawMessage) (*tracers.Trac
 
 	// Create inner call tracer with default configuration, don't forward
 	// the OnlyTopCall or WithLog to inner for now
-	t, err := newCallTracerObject(ctx, nil)
+	t, err := newCallTracerObject(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -147,10 +152,23 @@ func newFlatCallTracer(ctx *tracers.Context, cfg json.RawMessage) (*tracers.Trac
 			OnTxEnd:   ft.OnTxEnd,
 			OnEnter:   ft.OnEnter,
 			OnExit:    ft.OnExit,
+			OnLog:     ft.OnLog,
 		},
 		Stop:      ft.Stop,
 		GetResult: ft.GetResult,
 	}, nil
+}
+
+func NewFlatCallTracer(ctx *tracers.Context) (*tracers.Tracer, error) {
+	cfg := callTracerConfig{
+		OnlyTopCall: false,
+		WithLog:     true,
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return newFlatCallTracer(ctx, raw)
 }
 
 // OnEnter is called when EVM enters a new scope (via call, create or selfdestruct).
@@ -228,6 +246,58 @@ func (t *flatCallTracer) GetResult() (json.RawMessage, error) {
 		return nil, err
 	}
 
+	if t.config.WithLog {
+		for callIndex, call := range flat {
+			pflat := ptypes.CallFrame{
+				Action: ptypes.CallAction{
+					Author:         call.Action.Author,
+					RewardType:     call.Action.RewardType,
+					SelfDestructed: call.Action.SelfDestructed,
+					Balance:        (*hexutil.Big)(call.Action.Balance),
+					CallType:       call.Action.CallType,
+					CreationMethod: call.Action.CreationMethod,
+					From:           call.Action.From,
+					Gas:            (*hexutil.Uint64)(call.Action.Gas),
+					Init:           (*hexutil.Bytes)(call.Action.Init),
+					Input:          (*hexutil.Bytes)(call.Action.Input),
+					RefundAddress:  call.Action.RefundAddress,
+					To:             call.Action.To,
+					Value:          (*hexutil.Big)(call.Action.Value),
+				},
+				BlockHash:           call.BlockHash,
+				BlockNumber:         call.BlockNumber,
+				Error:               call.Error,
+				Subtraces:           call.Subtraces,
+				TraceAddress:        call.TraceAddress,
+				TransactionHash:     call.TransactionHash,
+				TransactionPosition: call.TransactionPosition,
+				Type:                call.Type,
+				Index:               uint64(callIndex),
+			}
+			if call.Result != nil {
+				pflat.Result = &ptypes.CallResult{
+					Address: call.Result.Address,
+					Code:    (*hexutil.Bytes)(call.Result.Code),
+					GasUsed: (*hexutil.Uint64)(call.Result.GasUsed),
+					Output:  (*hexutil.Bytes)(call.Result.Output),
+				}
+			}
+			pipeline.PipelineCtx.Traces = append(pipeline.PipelineCtx.Traces, pflat)
+
+			for _, log := range call.EventPositions {
+				traceAddress := make([]int, len(call.TraceAddress))
+				copy(traceAddress, call.TraceAddress)
+				ctx := ptypes.EventPosition{
+					TraceAddress: traceAddress,
+					Position:     log.Position,
+					Index:        log.Index,
+					GlobalIndex:  uint(pipeline.PipelineCtx.TotalEventCount) + log.Index,
+				}
+				pipeline.PipelineCtx.EventPositions = append(pipeline.PipelineCtx.EventPositions, ctx)
+			}
+		}
+	}
+
 	res, err := json.Marshal(flat)
 	if err != nil {
 		return nil, err
@@ -246,6 +316,10 @@ func (t *flatCallTracer) isPrecompiled(addr common.Address) bool {
 	return slices.Contains(t.activePrecompiles, addr)
 }
 
+func (t *flatCallTracer) OnLog(log *types.Log) {
+	t.tracer.OnLog(log)
+}
+
 func flatFromNested(input *callFrame, traceAddress []int, convertErrs bool, ctx *tracers.Context) (output []flatCallFrame, err error) {
 	var frame *flatCallFrame
 	switch input.Type {
@@ -258,7 +332,7 @@ func flatFromNested(input *callFrame, traceAddress []int, convertErrs bool, ctx 
 	default:
 		return nil, fmt.Errorf("unrecognized call frame type: %s", input.Type)
 	}
-
+	frame.EventPositions = input.EventPosition
 	frame.TraceAddress = traceAddress
 	frame.Error = input.Error
 	frame.Subtraces = len(input.Calls)

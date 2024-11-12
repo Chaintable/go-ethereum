@@ -22,6 +22,7 @@ import (
 	"math/big"
 	"sync/atomic"
 
+	ptypes "github.com/Chaintable/pipeline/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -58,6 +59,8 @@ type callFrame struct {
 	RevertReason string          `json:"revertReason,omitempty"`
 	Calls        []callFrame     `json:"calls,omitempty" rlp:"optional"`
 	Logs         []callLog       `json:"logs,omitempty" rlp:"optional"`
+
+	EventPosition []ptypes.EventPosition `json:"-" rlp:"optional"`
 	// Placed at end on purpose. The RLP will be decoded to 0 instead of
 	// nil if there are non-empty elements after in the struct.
 	Value            *big.Int `json:"value,omitempty" rlp:"optional"`
@@ -247,13 +250,12 @@ func (t *callTracer) OnLog(log *types.Log) {
 	if t.interrupt.Load() {
 		return
 	}
-	l := callLog{
-		Address:  log.Address,
-		Topics:   log.Topics,
-		Data:     log.Data,
-		Position: hexutil.Uint(len(t.callstack[len(t.callstack)-1].Calls)),
+	position := len(t.callstack[len(t.callstack)-1].Calls)
+	l := ptypes.EventPosition{
+		Position: &position,
+		Index:    log.Index,
 	}
-	t.callstack[len(t.callstack)-1].Logs = append(t.callstack[len(t.callstack)-1].Logs, l)
+	t.callstack[len(t.callstack)-1].EventPosition = append(t.callstack[len(t.callstack)-1].EventPosition, l)
 }
 
 // GetResult returns the json-encoded nested list of call traces, and any
@@ -282,7 +284,7 @@ func clearFailedLogs(cf *callFrame, parentFailed bool) {
 	failed := cf.failed() || parentFailed
 	// Clear own logs
 	if failed {
-		cf.Logs = nil
+		cf.EventPosition = nil
 	}
 	for i := range cf.Calls {
 		clearFailedLogs(&cf.Calls[i], failed)
