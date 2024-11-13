@@ -60,7 +60,7 @@ type callFrame struct {
 	Calls        []callFrame     `json:"calls,omitempty" rlp:"optional"`
 	Logs         []callLog       `json:"logs,omitempty" rlp:"optional"`
 
-	EventPosition []ptypes.EventPosition `json:"-" rlp:"optional"`
+	EventPosition []ptypes.Event `json:"-" rlp:"optional"`
 	// Placed at end on purpose. The RLP will be decoded to 0 instead of
 	// nil if there are non-empty elements after in the struct.
 	Value            *big.Int `json:"value,omitempty" rlp:"optional"`
@@ -251,9 +251,9 @@ func (t *callTracer) OnLog(log *types.Log) {
 		return
 	}
 	position := len(t.callstack[len(t.callstack)-1].Calls)
-	l := ptypes.EventPosition{
-		Position: &position,
-		Index:    log.Index,
+	l := ptypes.Event{
+		Position: int64(position),
+		Index:    int64(log.Index),
 	}
 	t.callstack[len(t.callstack)-1].EventPosition = append(t.callstack[len(t.callstack)-1].EventPosition, l)
 }

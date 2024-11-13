@@ -13,10 +13,11 @@ import (
 type ExtraInfo struct {
 	BlockNumber     uint64
 	BlockHash       common.Hash
-	Traces          []ptypes.CallFrame
+	Traces          []ptypes.Trace
 	Block           *ptypes.Block
+	BlockHeader     *ptypes.Header
 	Tx              *ptypes.Transaction
-	EventPositions  []ptypes.EventPosition
+	EventPositions  []ptypes.Event
 	BlockDiff       *ptypes.BlockStorageDiff
 	BlockChange     *ptypes.BlockChangeNotification
 	TotalEventCount uint64
@@ -42,7 +43,7 @@ func InitPipeline(extraInfoPath string, region string, bucket string, brokers []
 	return nil
 }
 
-func GetLogTraceContextByIndex(index uint) *ptypes.EventPosition {
+func GetLogTraceContextByIndex(index int64) *ptypes.Event {
 	for _, pos := range PipelineCtx.EventPositions {
 		if pos.Index == index {
 			return &pos
