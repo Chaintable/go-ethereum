@@ -100,7 +100,7 @@ func (t *pipelineTracer) BuildPipelineWithdrawals(rawBlock *types.Block) []ptype
 	res := make([]ptypes.SpecialTransfer, 0)
 	for _, withdrawal := range rawBlock.Withdrawals() {
 		specialTransfer := ptypes.SpecialTransfer{
-			FromAddress: common.Address{}.Hex(),
+			FromAddress: "0x00000000219ab540356cBB839Cbe05303d7705Fa", //eth2 合约
 			ToAddress:   withdrawal.Address.Hex(),
 			Value:       (*hexutil.Big)(big.NewInt(int64(withdrawal.Amount))),
 			Memo:        "beacon_withdrawl",
