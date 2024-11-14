@@ -8,12 +8,12 @@ import (
 
 	"github.com/Chaintable/pipeline/processor"
 	ptypes "github.com/Chaintable/pipeline/types"
+	"github.com/Chaintable/pipeline/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers"
-	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/pipeline"
@@ -22,11 +22,8 @@ import (
 // 需要上传6种data
 // 在生成时就上传
 // 1. block
-// 2. transaction
-// 3. event
-// 4. receipt
-// 5. trace
-// 6. state diff
+// 2. state diff
+// 3. block file
 
 func init() {
 	tracers.LiveDirectory.Register("pipeline", newpipelineTracer)
@@ -35,7 +32,7 @@ func init() {
 type pipelineTracer struct {
 	config     pipelineTracerConfig
 	ctx        *tracers.Context
-	callTracer *tracers.Tracer
+	callTracer *callTracer
 }
 
 type pipelineTracerConfig struct {
@@ -44,6 +41,7 @@ type pipelineTracerConfig struct {
 	Bucket        string   `json:"bucket"`
 	Brokers       []string `json:"brokers"`
 	Topic         string   `json:"topic"`
+	ChainID       string   `json:"chain_id"`
 }
 
 func newpipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
@@ -67,6 +65,8 @@ func newpipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		OnEnter:          t.OnEnter,
 		OnExit:           t.OnExit,
 		OnLog:            t.OnLog,
+		OnOpcode:         t.OnOpcode,
+		OnBalanceChange:  t.OnBalanceChange,
 		OnGenesisBlock:   t.OnGenesisBlock,
 	}, nil
 }
@@ -83,8 +83,38 @@ func (t *pipelineTracer) OnBlockchainInit(chainConfig *params.ChainConfig) {
 }
 
 func (t *pipelineTracer) OnClose() {
-	pipeline.ExtraInfoStore.Close()
 	pipeline.Pusher.Close()
+}
+
+func (t *pipelineTracer) BuildPilelineBlock(rawBlock *types.Block) ptypes.Block {
+	block := ptypes.Block{
+		ID:            rawBlock.Hash().Hex(),
+		Height:        rawBlock.Number(),
+		ParentID:      rawBlock.ParentHash().Hex(),
+		BaseFeePerGas: rawBlock.BaseFee(),
+		Miner:         rawBlock.Coinbase().Hex(),
+		GasLimit:      big.NewInt(int64(rawBlock.GasLimit())),
+		GasUsed:       big.NewInt(int64(rawBlock.GasUsed())),
+		Timestamp:     rawBlock.Time(),
+	}
+	return block
+}
+
+func (t *pipelineTracer) BuildPipelineWithdrawals(rawBlock *types.Block) []ptypes.SpecialTransfer {
+	res := make([]ptypes.SpecialTransfer, 0)
+	for _, withdrawal := range rawBlock.Withdrawals() {
+		specialTransfer := ptypes.SpecialTransfer{
+			FromAddress: common.Address{}.Hex(),
+			ToAddress:   withdrawal.Address.Hex(),
+			Value:       (*hexutil.Big)(big.NewInt(int64(withdrawal.Amount))),
+			Memo:        "beacon_withdrawl",
+			Idx:         big.NewInt(int64(withdrawal.Index)),
+		}
+		specialTransfer.ID = util.ToHash([]string{rawBlock.Hash().Hex(), withdrawal.Address.Hex(), fmt.Sprintf("%d", withdrawal.Index)})
+		res = append(res, specialTransfer)
+	}
+
+	return res
 }
 
 func (t *pipelineTracer) BuildPilelineBlockHeader(block *types.Block) *ptypes.Header {
@@ -134,18 +164,11 @@ func (t *pipelineTracer) BuildPilelineBlockHeader(block *types.Block) *ptypes.He
 	for i, tx := range txs {
 		txhashes[i] = tx.Hash()
 	}
-	//pblock := ptypes.Block{
-	//	Header:      blockHeader,
-	//	Size:        hexutil.Uint64(block.Size()),
-	//	Uncles:      uncleHashes,
-	//	Withdrawals: block.Withdrawals(),
-	//	Requests:    block.Requests(),
-	//}
 	return &blockHeader
 }
 
 func (t *pipelineTracer) uploadBlockHeader(blockHeader *ptypes.Header) error {
-	s3BlockFile, err := processor.SerializeHeader((*hexutil.Big)(pipeline.ChainID), blockHeader)
+	s3BlockFile, err := processor.SerializeHeader(t.config.ChainID, blockHeader)
 	if err != nil {
 		return err
 	}
@@ -165,16 +188,16 @@ func (t *pipelineTracer) OnBlockStart(event tracing.BlockEvent) {
 		BlockNumber: event.Block.Number().Uint64(),
 		BlockHash:   event.Block.Hash(),
 	}
-	pipeline.PipelineCtx.Traces = make([]ptypes.Trace, 0)
-	pipeline.PipelineCtx.EventPositions = make([]ptypes.Event, 0)
-	totalEventCount, err := pipeline.ExtraInfoStore.GetBlockEventCount(pipeline.PipelineCtx.BlockHash)
-	if err != nil {
-		log.Crit("Failed to get block event count", "err", err)
-	}
-	pipeline.PipelineCtx.TotalEventCount = totalEventCount
 	pipeline.PipelineCtx.BlockDiff = &ptypes.BlockStorageDiff{}
 	pipeline.PipelineCtx.BlockHeader = t.BuildPilelineBlockHeader(event.Block)
-	err = t.uploadBlockHeader(pipeline.PipelineCtx.BlockHeader)
+	pipeline.PipelineCtx.BlockFile = &ptypes.BlockFile{
+		Block:            t.BuildPilelineBlock(event.Block),
+		SpecialTransfers: t.BuildPipelineWithdrawals(event.Block),
+	}
+	pipeline.PipelineCtx.Tx = nil
+	pipeline.PipelineCtx.From = common.Address{}
+
+	err := t.uploadBlockHeader(pipeline.PipelineCtx.BlockHeader)
 	if err != nil {
 		log.Crit("Failed to upload block", "err", err)
 	}
@@ -182,13 +205,8 @@ func (t *pipelineTracer) OnBlockStart(event tracing.BlockEvent) {
 }
 
 func (t *pipelineTracer) OnBlockEnd(blockErr error) {
-	pipeline.PipelineCtx.TotalEventCount += uint64(len(pipeline.PipelineCtx.EventPositions))
-
-	// 记录block event count
-	pipeline.ExtraInfoStore.WriteBlockEventCount(pipeline.PipelineCtx.BlockHash, pipeline.PipelineCtx.TotalEventCount)
-
 	// 上传state diff
-	s3file, err := processor.SerializeStateDiff((*hexutil.Big)(pipeline.ChainID), pipeline.PipelineCtx.BlockDiff)
+	s3file, err := processor.SerializeStateDiff(t.config.ChainID, pipeline.PipelineCtx.BlockDiff)
 	if err != nil {
 		log.Crit("Failed to serialize state diff", "err", err)
 	}
@@ -196,7 +214,11 @@ func (t *pipelineTracer) OnBlockEnd(blockErr error) {
 	if err != nil {
 		log.Crit("Failed to upload files to s3", "err", err)
 	}
-	log.Info("6.upload state diff", "block", pipeline.PipelineCtx.BlockHash.Hex())
+	log.Info("2.upload state diff", "block", pipeline.PipelineCtx.BlockHash.Hex())
+
+	// TODO 上传blockfile和meta到业务s3
+
+	// push block change notification
 	if pipeline.PipelineCtx.BlockChange != nil {
 		start := time.Now()
 		pipeline.Pusher.PushBlockChangeNotification(pipeline.PipelineCtx.BlockChange)
@@ -204,212 +226,49 @@ func (t *pipelineTracer) OnBlockEnd(blockErr error) {
 	}
 }
 
-//func (t *pipelineTracer) buildPipelineTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber uint64, index uint64, baseFee *big.Int, from common.Address) *ptypes.Transaction {
-//	v, r, s := tx.RawSignatureValues()
-//	result := &ptypes.Transaction{
-//		Type:     hexutil.Uint64(tx.Type()),
-//		From:     from,
-//		Gas:      hexutil.Uint64(tx.Gas()),
-//		GasPrice: (*hexutil.Big)(tx.GasPrice()),
-//		Hash:     tx.Hash(),
-//		Input:    hexutil.Bytes(tx.Data()),
-//		Nonce:    hexutil.Uint64(tx.Nonce()),
-//		To:       tx.To(),
-//		Value:    (*hexutil.Big)(tx.Value()),
-//		V:        (*hexutil.Big)(v),
-//		R:        (*hexutil.Big)(r),
-//		S:        (*hexutil.Big)(s),
-//	}
-//	if blockHash != (common.Hash{}) {
-//		result.BlockHash = blockHash
-//		result.BlockNumber = (*hexutil.Big)(new(big.Int).SetUint64(blockNumber))
-//		result.TransactionIndex = (*hexutil.Uint64)(&index)
-//	}
-//
-//	switch tx.Type() {
-//	case types.LegacyTxType:
-//		// if a legacy transaction has an EIP-155 chain id, include it explicitly
-//		if id := tx.ChainId(); id.Sign() != 0 {
-//			result.ChainID = (*hexutil.Big)(id)
-//		}
-//
-//	case types.AccessListTxType:
-//		al := tx.AccessList()
-//		yparity := hexutil.Uint64(v.Sign())
-//		result.Accesses = &al
-//		result.ChainID = (*hexutil.Big)(tx.ChainId())
-//		result.YParity = &yparity
-//
-//	case types.DynamicFeeTxType:
-//		al := tx.AccessList()
-//		yparity := hexutil.Uint64(v.Sign())
-//		result.Accesses = &al
-//		result.ChainID = (*hexutil.Big)(tx.ChainId())
-//		result.YParity = &yparity
-//		result.GasFeeCap = (*hexutil.Big)(tx.GasFeeCap())
-//		result.GasTipCap = (*hexutil.Big)(tx.GasTipCap())
-//		// if the transaction has been mined, compute the effective gas price
-//		if baseFee != nil && blockHash != (common.Hash{}) {
-//			// price = min(gasTipCap + baseFee, gasFeeCap)
-//			result.GasPrice = (*hexutil.Big)(effectiveGasPrice(tx, baseFee))
-//		} else {
-//			result.GasPrice = (*hexutil.Big)(tx.GasFeeCap())
-//		}
-//
-//	case types.BlobTxType:
-//		al := tx.AccessList()
-//		yparity := hexutil.Uint64(v.Sign())
-//		result.Accesses = &al
-//		result.ChainID = (*hexutil.Big)(tx.ChainId())
-//		result.YParity = &yparity
-//		result.GasFeeCap = (*hexutil.Big)(tx.GasFeeCap())
-//		result.GasTipCap = (*hexutil.Big)(tx.GasTipCap())
-//		// if the transaction has been mined, compute the effective gas price
-//		if baseFee != nil && blockHash != (common.Hash{}) {
-//			result.GasPrice = (*hexutil.Big)(effectiveGasPrice(tx, baseFee))
-//		} else {
-//			result.GasPrice = (*hexutil.Big)(tx.GasFeeCap())
-//		}
-//		result.MaxFeePerBlobGas = (*hexutil.Big)(tx.BlobGasFeeCap())
-//		result.BlobVersionedHashes = tx.BlobHashes()
-//	}
-//	return result
-//}
-
-func effectiveGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
-	fee := tx.GasTipCap()
-	fee = fee.Add(fee, baseFee)
-	if tx.GasFeeCapIntCmp(fee) < 0 {
-		return tx.GasFeeCap()
+func (t *pipelineTracer) buildPipelineTransaction(tx *types.Transaction, receipt *types.Receipt, from common.Address) ptypes.Transaction {
+	to := receipt.ContractAddress
+	if tx.To() != nil {
+		to = *tx.To()
 	}
-	return fee
-}
-
-func (t *pipelineTracer) uploadTransaction(ptx *ptypes.Transaction) error {
-	//s3file, err := processor.SerializeTransaction((*hexutil.Big)(pipeline.ChainID), ptx)
-	//if err != nil {
-	//	return err
-	//}
-	//err = pipeline.Pusher.UploadFileToS3(s3file)
-	//if err != nil {
-	//	return err
-	//}
-	return nil
+	gasPrice := receipt.EffectiveGasPrice
+	if gasPrice == nil {
+		gasPrice = tx.GasPrice()
+	}
+	transaction := ptypes.Transaction{
+		ID:               tx.Hash().Hex(),
+		From:             from.Hex(),
+		To:               to.Hex(),
+		Gas:              big.NewInt(int64(tx.Gas())),
+		GasPrice:         gasPrice,
+		GasUsed:          big.NewInt(int64(receipt.GasUsed)),
+		Status:           receipt.Status == types.ReceiptStatusSuccessful,
+		GasFeeCap:        tx.GasFeeCap(),
+		GasTipCap:        tx.GasTipCap(),
+		Input:            tx.Data(),
+		Nonce:            big.NewInt(int64(tx.Nonce())),
+		TransactionIndex: int64(receipt.TransactionIndex),
+		Value:            (*hexutil.Big)(tx.Value()),
+	}
+	return transaction
 }
 
 func (t *pipelineTracer) OnTxStart(vm *tracing.VMContext, tx *types.Transaction, from common.Address) {
 	t.ctx.TxHash = tx.Hash()
-	callTracer, err := native.NewFlatCallTracer(t.ctx)
-	if err != nil {
-		log.Crit("Failed to create call tracer", "err", err)
-	}
-	if callTracer == nil {
-		log.Crit("Failed to create call tracer")
-	}
+	callTracer := newCallTracerRaw(t.ctx)
 	t.callTracer = callTracer
 	t.callTracer.OnTxStart(vm, tx, from)
-	//pipeline.PipelineCtx.Tx = t.buildPipelineTransaction(tx, t.ctx.BlockHash, t.ctx.BlockNumber.Uint64(), uint64(t.ctx.TxIndex), (*big.Int)(pipeline.PipelineCtx.Block.BaseFeePerGas), from)
-	//err = t.uploadTransaction(pipeline.PipelineCtx.Tx)
-	//if err != nil {
-	//	log.Crit("Failed to upload transaction", "err", err)
-	//}
-	//log.Info("2.upload transaction", "tx hash", tx.Hash().Hex(), "tx index", t.ctx.TxIndex)
+	pipeline.PipelineCtx.Tx = tx
+	pipeline.PipelineCtx.From = from
 }
-
-//func (t *pipelineTracer) uploadReceiptAndLog(receipt *types.Receipt) error {
-//	tx := pipeline.PipelineCtx.Tx
-//	pReceipt := &ptypes.Receipt{
-//		BlockHash:         receipt.BlockHash,
-//		BlockNumber:       (hexutil.Uint64)(receipt.BlockNumber.Uint64()),
-//		TransactionHash:   receipt.TxHash,
-//		TransactionIndex:  (hexutil.Uint64)(receipt.TransactionIndex),
-//		From:              tx.From,
-//		To:                tx.To,
-//		GasUsed:           (hexutil.Uint64)(receipt.GasUsed),
-//		CumulativeGasUsed: (hexutil.Uint64)(receipt.CumulativeGasUsed),
-//		LogsBloom:         receipt.Bloom,
-//		EffectiveGasPrice: (*hexutil.Big)(receipt.EffectiveGasPrice),
-//		Type:              (hexutil.Uint)(receipt.Type),
-//	}
-//	if len(receipt.PostState) > 0 {
-//		root := hexutil.Bytes(receipt.PostState)
-//		pReceipt.Root = &root
-//	} else {
-//		status := (hexutil.Uint)(receipt.Status)
-//		pReceipt.Status = &status
-//	}
-//	if tx.Type == types.BlobTxType {
-//		blobGasUsed := (hexutil.Uint64)(receipt.BlobGasUsed)
-//		pReceipt.BlobGasUsed = &blobGasUsed
-//		blobGasPrice := (*hexutil.Big)(receipt.BlobGasPrice)
-//		pReceipt.BlobGasPrice = blobGasPrice
-//	}
-//
-//	if receipt.ContractAddress != (common.Address{}) {
-//		pReceipt.ContractAddress = &receipt.ContractAddress
-//	}
-//
-//	s3files := make([]*processor.DataFile, 0)
-//	s3file, err := processor.SerializeReceipt((*hexutil.Big)(pipeline.ChainID), pReceipt)
-//	if err != nil {
-//		return err
-//	}
-//	s3files = append(s3files, s3file)
-//
-//	for _, log := range receipt.Logs {
-//		pos := pipeline.GetLogTraceContextByIndex(uint(log.Index))
-//		event := &ptypes.Event{
-//			Address:     log.Address,
-//			Topics:      log.Topics,
-//			Data:        log.Data,
-//			BlockNumber: (hexutil.Uint64)(receipt.BlockNumber.Uint64()),
-//			BlockHash:   receipt.BlockHash,
-//			TxHash:      receipt.TxHash,
-//			TxIndex:     (hexutil.Uint)(receipt.TransactionIndex),
-//			Index:       (hexutil.Uint)(log.Index),
-//			Removed:     false,
-//
-//			TraceAddress: pos.TraceAddress,
-//			Position:     pos.Position,
-//			GlobalIndex:  (hexutil.Uint)(pos.GlobalIndex),
-//		}
-//		s3file, err := processor.SerializeEvent((*hexutil.Big)(pipeline.ChainID), event)
-//		if err != nil {
-//			return err
-//		}
-//		s3files = append(s3files, s3file)
-//	}
-//
-//	return pipeline.Pusher.UploadFilesToS3(s3files)
-//}
 
 func (t *pipelineTracer) OnTxEnd(receipt *types.Receipt, err error) {
 	t.callTracer.OnTxEnd(receipt, err)
-	t.callTracer.GetResult() // ignore the result
 	t.ctx.TxIndex += 1
 	t.callTracer = nil
 
-	//if err := t.uploadReceiptAndLog(receipt); err != nil {
-	//	log.Crit("Failed to upload receipt and log", "err", err)
-	//}
-	//log.Info("3-4.upload receipt and log", "tx hash", receipt.TxHash.Hex())
-	//
-	//if len(pipeline.PipelineCtx.Traces) > 0 {
-	//	s3files := make([]*processor.DataFile, 0)
-	//	for _, trace := range pipeline.PipelineCtx.Traces {
-	//		s3file, err := processor.SerializeTrace((*hexutil.Big)(pipeline.ChainID), trace)
-	//		if err != nil {
-	//			log.Crit("Failed to serialize trace", "err", err)
-	//		}
-	//		s3files = append(s3files, s3file)
-	//	}
-	//	err := pipeline.Pusher.UploadFilesToS3(s3files)
-	//	if err != nil {
-	//		log.Crit("Failed to upload trace", "err", err)
-	//	}
-	//	log.Info("5.upload trace", "tx hash", receipt.TxHash.Hex(), "trace count", len(pipeline.PipelineCtx.Traces))
-	//}
-
+	tx := t.buildPipelineTransaction(pipeline.PipelineCtx.Tx, receipt, pipeline.PipelineCtx.From)
+	pipeline.PipelineCtx.BlockFile.Txs = append(pipeline.PipelineCtx.BlockFile.Txs, tx)
 }
 
 func (t *pipelineTracer) OnEnter(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
@@ -426,6 +285,13 @@ func (t *pipelineTracer) OnExit(depth int, output []byte, gasUsed uint64, err er
 	t.callTracer.OnExit(depth, output, gasUsed, err, reverted)
 }
 
+func (t *pipelineTracer) OnOpcode(pc uint64, op byte, gas, cost uint64, scope tracing.OpContext, rData []byte, depth int, err error) {
+	if t.callTracer == nil {
+		return
+	}
+	t.callTracer.OnOpcode(pc, op, gas, cost, scope, rData, depth, err)
+}
+
 func (t *pipelineTracer) OnLog(log *types.Log) {
 	if t.callTracer == nil {
 		return
@@ -433,22 +299,49 @@ func (t *pipelineTracer) OnLog(log *types.Log) {
 	t.callTracer.OnLog(log)
 }
 
+func (t *pipelineTracer) OnBalanceChange(a common.Address, prev, new *big.Int, reason tracing.BalanceChangeReason) {
+	if reason == tracing.BalanceIncreaseRewardMineUncle || reason == tracing.BalanceIncreaseRewardMineBlock {
+		specialTransfer := ptypes.SpecialTransfer{
+			FromAddress: common.Address{}.Hex(),
+			ToAddress:   a.Hex(),
+			Value:       (*hexutil.Big)(new),
+			Memo:        "block_reward",
+			Idx:         big.NewInt(int64(reason)),
+		}
+		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), a.Hex(), fmt.Sprintf("%d", reason)})
+		pipeline.PipelineCtx.BlockFile.SpecialTransfers = append(pipeline.PipelineCtx.BlockFile.SpecialTransfers, specialTransfer)
+	}
+	if reason == tracing.BalanceIncreaseRewardTransactionFee {
+		specialTransfer := ptypes.SpecialTransfer{
+			FromAddress: common.Address{}.Hex(),
+			ToAddress:   a.Hex(),
+			Value:       (*hexutil.Big)(new),
+			Memo:        "gasfee_reward",
+			Idx:         big.NewInt(int64(reason)),
+		}
+		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), a.Hex(), fmt.Sprintf("%d", reason)})
+		pipeline.PipelineCtx.BlockFile.SpecialTransfers = append(pipeline.PipelineCtx.BlockFile.SpecialTransfers, specialTransfer)
+	}
+}
+
 func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisAlloc) {
 	if pipeline.Pusher.LastBlockNotice != nil {
 		return
 	}
+
+	// 内部s3
 	header := t.BuildPilelineBlockHeader(block)
 	err := t.uploadBlockHeader(header)
 	if err != nil {
 		log.Crit("Failed to upload block", "err", err)
 	}
-	log.Info("1.upload genesis block", "block hash", block.Hash().Hex(), "block number", block.Number().Uint64())
+	log.Info("[inner s3] 1.upload genesis block", "block hash", block.Hash().Hex(), "block number", block.Number().Uint64())
 
 	blockdiff := pipeline.GenesisAllocToStateDiff(alloc)
 	blockdiff.Hash = block.Root()
 	// genesis block has no parent
 	blockdiff.ParentHash = types.EmptyRootHash
-	s3file, err := processor.SerializeStateDiff((*hexutil.Big)(pipeline.ChainID), blockdiff)
+	s3file, err := processor.SerializeStateDiff(t.config.ChainID, blockdiff)
 	if err != nil {
 		log.Crit("Failed to serialize state diff", "err", err)
 	}
@@ -456,8 +349,28 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 	if err != nil {
 		log.Crit("Failed to upload files to s3", "err", err)
 	}
-	log.Info("6.upload genesis state diff", "block", block.Hash().Hex())
+	log.Info("inner s3] 2.upload genesis state diff", "block", block.Hash().Hex())
 
+	// 业务s3
+	blockFile := &ptypes.BlockFile{
+		Block: t.BuildPilelineBlock(block),
+	}
+	for addr, acc := range alloc {
+		if acc.Balance.Cmp(big.NewInt(0)) > 0 {
+			specialTransfer := ptypes.SpecialTransfer{
+				FromAddress: common.Address{}.Hex(),
+				ToAddress:   addr.Hex(),
+				Value:       (*hexutil.Big)(acc.Balance),
+				Memo:        "genesis",
+				Idx:         big.NewInt(0),
+			}
+			blockFile.SpecialTransfers = append(blockFile.SpecialTransfers, specialTransfer)
+		}
+	}
+	// TODO
+	// upload block file and meta data
+
+	// push block change notification
 	blockChanges := &ptypes.BlockChangeNotification{
 		ChangeType: 1,
 		NewBlocks: []ptypes.BlockContext{
@@ -475,5 +388,4 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 	}
 
 	log.Info("push genesis block change notification", "block hash", block.Hash().Hex(), "block number", block.Number().Uint64())
-
 }
