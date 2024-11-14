@@ -32,7 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
-	"github.com/ethereum/go-ethereum/pipeline"
 )
 
 //go:generate go run github.com/fjl/gencodec -type flatCallAction -field-override flatCallActionMarshaling -out gen_flatcallaction_json.go
@@ -73,7 +72,7 @@ type flatCallFrame struct {
 	TransactionPosition uint64          `json:"transactionPosition"`
 	Type                string          `json:"type"`
 
-	EventPositions []ptypes.EventPosition `json:"-"`
+	EventPositions []ptypes.Event `json:"-"`
 }
 
 type flatCallAction struct {
@@ -246,57 +245,57 @@ func (t *flatCallTracer) GetResult() (json.RawMessage, error) {
 		return nil, err
 	}
 
-	if t.config.WithLog {
-		for callIndex, call := range flat {
-			pflat := ptypes.CallFrame{
-				Action: ptypes.CallAction{
-					Author:         call.Action.Author,
-					RewardType:     call.Action.RewardType,
-					SelfDestructed: call.Action.SelfDestructed,
-					Balance:        (*hexutil.Big)(call.Action.Balance),
-					CallType:       call.Action.CallType,
-					CreationMethod: call.Action.CreationMethod,
-					From:           call.Action.From,
-					Gas:            (*hexutil.Uint64)(call.Action.Gas),
-					Init:           (*hexutil.Bytes)(call.Action.Init),
-					Input:          (*hexutil.Bytes)(call.Action.Input),
-					RefundAddress:  call.Action.RefundAddress,
-					To:             call.Action.To,
-					Value:          (*hexutil.Big)(call.Action.Value),
-				},
-				BlockHash:           call.BlockHash,
-				BlockNumber:         call.BlockNumber,
-				Error:               call.Error,
-				Subtraces:           call.Subtraces,
-				TraceAddress:        call.TraceAddress,
-				TransactionHash:     call.TransactionHash,
-				TransactionPosition: call.TransactionPosition,
-				Type:                call.Type,
-				Index:               uint64(callIndex),
-			}
-			if call.Result != nil {
-				pflat.Result = &ptypes.CallResult{
-					Address: call.Result.Address,
-					Code:    (*hexutil.Bytes)(call.Result.Code),
-					GasUsed: (*hexutil.Uint64)(call.Result.GasUsed),
-					Output:  (*hexutil.Bytes)(call.Result.Output),
-				}
-			}
-			pipeline.PipelineCtx.Traces = append(pipeline.PipelineCtx.Traces, pflat)
-
-			for _, log := range call.EventPositions {
-				traceAddress := make([]int, len(call.TraceAddress))
-				copy(traceAddress, call.TraceAddress)
-				ctx := ptypes.EventPosition{
-					TraceAddress: traceAddress,
-					Position:     log.Position,
-					Index:        log.Index,
-					GlobalIndex:  uint(pipeline.PipelineCtx.TotalEventCount) + log.Index,
-				}
-				pipeline.PipelineCtx.EventPositions = append(pipeline.PipelineCtx.EventPositions, ctx)
-			}
-		}
-	}
+	//if t.config.WithLog {
+	//	for callIndex, call := range flat {
+	//		pflat := ptypes.Trace{
+	//			Action: ptypes.CallAction{
+	//				Author:         call.Action.Author,
+	//				RewardType:     call.Action.RewardType,
+	//				SelfDestructed: call.Action.SelfDestructed,
+	//				Balance:        (*hexutil.Big)(call.Action.Balance),
+	//				CallType:       call.Action.CallType,
+	//				CreationMethod: call.Action.CreationMethod,
+	//				From:           call.Action.From,
+	//				Gas:            (*hexutil.Uint64)(call.Action.Gas),
+	//				Init:           (*hexutil.Bytes)(call.Action.Init),
+	//				Input:          (*hexutil.Bytes)(call.Action.Input),
+	//				RefundAddress:  call.Action.RefundAddress,
+	//				To:             call.Action.To,
+	//				Value:          (*hexutil.Big)(call.Action.Value),
+	//			},
+	//			BlockHash:           call.BlockHash,
+	//			BlockNumber:         call.BlockNumber,
+	//			Error:               call.Error,
+	//			Subtraces:           call.Subtraces,
+	//			TraceAddress:        call.TraceAddress,
+	//			TransactionHash:     call.TransactionHash,
+	//			TransactionPosition: call.TransactionPosition,
+	//			Type:                call.Type,
+	//			Index:               uint64(callIndex),
+	//		}
+	//		if call.Result != nil {
+	//			pflat.Result = &ptypes.CallResult{
+	//				Address: call.Result.Address,
+	//				Code:    (*hexutil.Bytes)(call.Result.Code),
+	//				GasUsed: (*hexutil.Uint64)(call.Result.GasUsed),
+	//				Output:  (*hexutil.Bytes)(call.Result.Output),
+	//			}
+	//		}
+	//		pipeline.PipelineCtx.Traces = append(pipeline.PipelineCtx.Traces, pflat)
+	//
+	//		for _, log := range call.EventPositions {
+	//			traceAddress := make([]int, len(call.TraceAddress))
+	//			copy(traceAddress, call.TraceAddress)
+	//			ctx := ptypes.EventPosition{
+	//				TraceAddress: traceAddress,
+	//				Position:     log.Position,
+	//				Index:        log.Index,
+	//				GlobalIndex:  uint(pipeline.PipelineCtx.TotalEventCount) + log.Index,
+	//			}
+	//			pipeline.PipelineCtx.EventPositions = append(pipeline.PipelineCtx.EventPositions, ctx)
+	//		}
+	//	}
+	//}
 
 	res, err := json.Marshal(flat)
 	if err != nil {

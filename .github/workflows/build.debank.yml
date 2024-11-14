@@ -75,6 +75,11 @@ jobs:
         run: |
           notiv3 "Blockchain Ethereum artifacts uploaded 🎉" https://${{ env.ARCHIVE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ARCHIVE_FILE_PREFIX }}/${{ env.ARCHIVE_FILE_NAME }}.tar.gz
 
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Build image and push to ECR
         uses:  docker/build-push-action@v5
         with:
