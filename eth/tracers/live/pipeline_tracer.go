@@ -1,3 +1,5 @@
+package live
+
 // Copyright 2021 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
@@ -14,14 +16,16 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package native
-
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"sync/atomic"
 
+	ptypes "github.com/Chaintable/pipeline/types"
+	"github.com/Chaintable/pipeline/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -29,22 +33,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/pipeline"
 )
-
-//go:generate go run github.com/fjl/gencodec -type callFrame -field-override callFrameMarshaling -out gen_callframe_json.go
-
-func init() {
-	tracers.DefaultDirectory.Register("callTracer", newCallTracer, false)
-}
-
-type callLog struct {
-	Address common.Address `json:"address"`
-	Topics  []common.Hash  `json:"topics"`
-	Data    hexutil.Bytes  `json:"data"`
-	// Position of the log relative to subcalls within the same trace
-	// See https://github.com/ethereum/go-ethereum/pull/28389 for details
-	Position hexutil.Uint `json:"position"`
-}
 
 type callFrame struct {
 	Type         vm.OpCode       `json:"-"`
@@ -57,7 +47,14 @@ type callFrame struct {
 	Error        string          `json:"error,omitempty" rlp:"optional"`
 	RevertReason string          `json:"revertReason,omitempty"`
 	Calls        []callFrame     `json:"calls,omitempty" rlp:"optional"`
-	Logs         []callLog       `json:"logs,omitempty" rlp:"optional"`
+	Logs         []ptypes.Event  `json:"logs,omitempty" rlp:"optional"`
+
+	PosInParentTrace  int    `json:"pos_in_parent_trace"`
+	ParentTraceID     string `json:"parent_trace_id"`
+	TraceID           string `json:"trace_id"`
+	StorageChange     bool   `json:"storageChange"`
+	SelfStorageChange bool   `json:"self_storage_change"`
+
 	// Placed at end on purpose. The RLP will be decoded to 0 instead of
 	// nil if there are non-empty elements after in the struct.
 	Value            *big.Int `json:"value,omitempty" rlp:"optional"`
@@ -69,7 +66,7 @@ func (f callFrame) TypeString() string {
 }
 
 func (f callFrame) failed() bool {
-	return len(f.Error) > 0 && f.revertedSnapshot
+	return len(f.Error) > 0
 }
 
 func (f *callFrame) processOutput(output []byte, err error, reverted bool) {
@@ -100,15 +97,6 @@ func (f *callFrame) processOutput(output []byte, err error, reverted bool) {
 	}
 }
 
-type callFrameMarshaling struct {
-	TypeString string `json:"type"`
-	Gas        hexutil.Uint64
-	GasUsed    hexutil.Uint64
-	Value      *hexutil.Big
-	Input      hexutil.Bytes
-	Output     hexutil.Bytes
-}
-
 type callTracer struct {
 	callstack []callFrame
 	config    callTracerConfig
@@ -116,6 +104,8 @@ type callTracer struct {
 	depth     int
 	interrupt atomic.Bool // Atomic flag to signal execution interruption
 	reason    error       // Textual reason for the interruption
+
+	txID string
 }
 
 type callTracerConfig struct {
@@ -125,11 +115,11 @@ type callTracerConfig struct {
 
 // newCallTracer returns a native go tracer which tracks
 // call frames of a tx, and implements vm.EVMLogger.
-func newCallTracer(ctx *tracers.Context, cfg json.RawMessage) (*tracers.Tracer, error) {
-	t, err := newCallTracerObject(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
+func newCallTracer(ctx *tracers.Context) *tracers.Tracer {
+	t := &callTracer{callstack: make([]callFrame, 0, 1), config: callTracerConfig{
+		OnlyTopCall: false,
+		WithLog:     true,
+	}}
 	return &tracers.Tracer{
 		Hooks: &tracing.Hooks{
 			OnTxStart: t.OnTxStart,
@@ -137,22 +127,62 @@ func newCallTracer(ctx *tracers.Context, cfg json.RawMessage) (*tracers.Tracer, 
 			OnEnter:   t.OnEnter,
 			OnExit:    t.OnExit,
 			OnLog:     t.OnLog,
+			OnOpcode:  t.OnOpcode,
 		},
 		GetResult: t.GetResult,
 		Stop:      t.Stop,
-	}, nil
+	}
 }
 
-func newCallTracerObject(ctx *tracers.Context, cfg json.RawMessage) (*callTracer, error) {
-	var config callTracerConfig
-	if cfg != nil {
-		if err := json.Unmarshal(cfg, &config); err != nil {
-			return nil, err
-		}
+func newCallTracerRaw(ctx *tracers.Context) *callTracer {
+	t := &callTracer{callstack: make([]callFrame, 0, 1), config: callTracerConfig{
+		OnlyTopCall: false,
+		WithLog:     true,
+	}}
+	return t
+}
+
+func (t *callTracer) ToTrace(f *callFrame) ptypes.Trace {
+	CallCreateType := ""
+	CallType := ""
+	switch f.Type {
+	case vm.CREATE, vm.CREATE2:
+		CallCreateType = strings.ToLower(vm.CREATE.String())
+	case vm.SELFDESTRUCT:
+		CallCreateType = "suicide"
+	case vm.CALL, vm.STATICCALL, vm.CALLCODE, vm.DELEGATECALL:
+		CallCreateType = strings.ToLower(vm.CALL.String())
+		CallType = strings.ToLower(f.Type.String())
+	default:
+		CallCreateType = "empty"
 	}
-	// First callframe contains tx context info
-	// and is populated on start and end.
-	return &callTracer{callstack: make([]callFrame, 0, 1), config: config}, nil
+	to := common.Address{}
+	if f.To != nil {
+		to = *f.To
+	}
+	return ptypes.Trace{
+		ID:                f.TraceID,
+		From:              f.From.Hex(),
+		Gas:               big.NewInt(int64(f.Gas)),
+		Input:             (hexutil.Bytes)(f.Input),
+		To:                to.Hex(),
+		Value:             (*hexutil.Big)(f.Value),
+		GasUsed:           big.NewInt(int64(f.GasUsed)),
+		Output:            (hexutil.Bytes)(f.Output),
+		CallCreateType:    CallCreateType,
+		CallType:          CallType,
+		TxID:              t.txID,
+		ParentTraceID:     f.ParentTraceID,
+		SelfStorageChange: f.SelfStorageChange,
+		StorageChange:     f.StorageChange,
+	}
+}
+
+func (t *callTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, scope tracing.OpContext, rData []byte, depth int, err error) {
+	if vm.OpCode(opcode) == vm.SSTORE {
+		t.callstack[len(t.callstack)-1].SelfStorageChange = true
+		t.callstack[len(t.callstack)-1].StorageChange = true
+	}
 }
 
 // OnEnter is called when EVM enters a new scope (via call, create or selfdestruct).
@@ -177,6 +207,9 @@ func (t *callTracer) OnEnter(depth int, typ byte, from common.Address, to common
 	}
 	if depth == 0 {
 		call.Gas = t.gasLimit
+		call.TraceID = util.ToHash([]string{t.txID, "", "0"})
+	} else {
+		call.ParentTraceID = t.callstack[len(t.callstack)-1].TraceID
 	}
 	t.callstack = append(t.callstack, call)
 }
@@ -206,7 +239,12 @@ func (t *callTracer) OnExit(depth int, output []byte, gasUsed uint64, err error,
 	call.GasUsed = gasUsed
 	call.processOutput(output, err, reverted)
 	// Nest call into parent.
-	t.callstack[size-1].Calls = append(t.callstack[size-1].Calls, call)
+	// 忽略失败的调用
+	if !call.failed() {
+		call.PosInParentTrace = len(t.callstack[size-1].Calls) + len(t.callstack[size-1].Logs)
+		call.TraceID = util.ToHash([]string{t.txID, t.callstack[size-1].TraceID, fmt.Sprintf("%d", call.PosInParentTrace)})
+		t.callstack[size-1].Calls = append(t.callstack[size-1].Calls, call)
+	}
 }
 
 func (t *callTracer) captureEnd(output []byte, gasUsed uint64, err error, reverted bool) {
@@ -218,6 +256,7 @@ func (t *callTracer) captureEnd(output []byte, gasUsed uint64, err error, revert
 
 func (t *callTracer) OnTxStart(env *tracing.VMContext, tx *types.Transaction, from common.Address) {
 	t.gasLimit = tx.Gas()
+	t.txID = tx.Hash().Hex()
 }
 
 func (t *callTracer) OnTxEnd(receipt *types.Receipt, err error) {
@@ -228,9 +267,11 @@ func (t *callTracer) OnTxEnd(receipt *types.Receipt, err error) {
 	if receipt != nil {
 		t.callstack[0].GasUsed = receipt.GasUsed
 	}
-	if t.config.WithLog {
-		// Logs are not emitted when the call fails
-		clearFailedLogs(&t.callstack[0], false)
+	clearFailedLogs(&t.callstack[0], false)
+	setStorageChange(&t.callstack[0])
+	if len(t.callstack) == 1 && t.callstack[0].failed() {
+		topCall := &t.callstack[0]
+		t.addTraceAndLog(topCall)
 	}
 }
 
@@ -247,27 +288,24 @@ func (t *callTracer) OnLog(log *types.Log) {
 	if t.interrupt.Load() {
 		return
 	}
-	l := callLog{
-		Address:  log.Address,
-		Topics:   log.Topics,
-		Data:     log.Data,
-		Position: hexutil.Uint(len(t.callstack[len(t.callstack)-1].Calls)),
+	topics := make([]string, len(log.Topics))
+	for i, topic := range log.Topics {
+		topics[i] = topic.Hex()
 	}
+
+	l := ptypes.Event{
+		Address:       log.Address.Hex(),
+		Topics:        topics,
+		Data:          log.Data,
+		Position:      int64(len(t.callstack[len(t.callstack)-1].Calls) + len(t.callstack[len(t.callstack)-1].Logs)),
+		ParentTraceID: t.callstack[len(t.callstack)-1].TraceID,
+	}
+	l.ID = util.ToHash([]string{l.ParentTraceID, fmt.Sprintf("%d", l.Position)})
 	t.callstack[len(t.callstack)-1].Logs = append(t.callstack[len(t.callstack)-1].Logs, l)
 }
 
-// GetResult returns the json-encoded nested list of call traces, and any
-// error arising from the encoding or forceful termination (via `Stop`).
 func (t *callTracer) GetResult() (json.RawMessage, error) {
-	if len(t.callstack) != 1 {
-		return nil, errors.New("incorrect number of top-level calls")
-	}
-
-	res, err := json.Marshal(t.callstack[0])
-	if err != nil {
-		return nil, err
-	}
-	return res, t.reason
+	return nil, nil
 }
 
 // Stop terminates execution of the tracer at the first opportune moment.
@@ -286,5 +324,30 @@ func clearFailedLogs(cf *callFrame, parentFailed bool) {
 	}
 	for i := range cf.Calls {
 		clearFailedLogs(&cf.Calls[i], failed)
+	}
+}
+
+func setStorageChange(cf *callFrame) {
+	subCallStorageChange := false
+	for i := range cf.Calls {
+		setStorageChange(&cf.Calls[i])
+		if cf.Calls[i].StorageChange {
+			subCallStorageChange = true
+		}
+	}
+	if subCallStorageChange {
+		cf.StorageChange = true
+	}
+}
+
+func (t *callTracer) addTraceAndLog(cf *callFrame) {
+	for i := range cf.Calls {
+		t.addTraceAndLog(&cf.Calls[i])
+	}
+	for i := range cf.Logs {
+		pipeline.PipelineCtx.BlockFile.Events = append(pipeline.PipelineCtx.BlockFile.Events, cf.Logs[i])
+	}
+	for i := range cf.Calls {
+		pipeline.PipelineCtx.BlockFile.Traces = append(pipeline.PipelineCtx.BlockFile.Traces, t.ToTrace(&cf.Calls[i]))
 	}
 }
