@@ -27,7 +27,7 @@ var (
 	PipelineCtx *ExtraInfo
 )
 
-func InitPipeline(extraInfoPath string, region string, bucket string, brokers []string, topic string, chainID *big.Int) (err error) {
+func InitPipeline(region string, bucket string, brokers []string, topic string, chainID *big.Int) (err error) {
 	Pusher, err = processor.NewPushProcessor(region, bucket, brokers, topic)
 	if err != nil {
 		return err

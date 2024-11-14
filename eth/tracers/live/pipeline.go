@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/pipeline"
 )
 
-// 需要上传6种data
+// 需要上传3种data
 // 在生成时就上传
 // 1. block
 // 2. state diff
@@ -36,12 +36,11 @@ type pipelineTracer struct {
 }
 
 type pipelineTracerConfig struct {
-	ExtraInfoPath string   `json:"extra_info_path"`
-	Region        string   `json:"region"`
-	Bucket        string   `json:"bucket"`
-	Brokers       []string `json:"brokers"`
-	Topic         string   `json:"topic"`
-	ChainID       string   `json:"chain_id"`
+	Region  string   `json:"region"`
+	Bucket  string   `json:"bucket"`
+	Brokers []string `json:"brokers"`
+	Topic   string   `json:"topic"`
+	ChainID string   `json:"chain_id"`
 }
 
 func newpipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
@@ -72,11 +71,8 @@ func newpipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 }
 
 func (t *pipelineTracer) OnBlockchainInit(chainConfig *params.ChainConfig) {
-	if t.config.ExtraInfoPath == "" {
-		t.config.ExtraInfoPath = "/var/data/extraInfodb"
-	}
 	log.Info("Init pipeline with param", "chainID", chainConfig.ChainID.String())
-	err := pipeline.InitPipeline(t.config.ExtraInfoPath, t.config.Region, t.config.Bucket, t.config.Brokers, t.config.Topic, chainConfig.ChainID)
+	err := pipeline.InitPipeline(t.config.Region, t.config.Bucket, t.config.Brokers, t.config.Topic, chainConfig.ChainID)
 	if err != nil {
 		log.Crit("Failed to init pipeline", "err", err)
 	}
