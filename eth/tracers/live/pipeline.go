@@ -36,11 +36,12 @@ type pipelineTracer struct {
 }
 
 type pipelineTracerConfig struct {
-	Region  string   `json:"region"`
-	Bucket  string   `json:"bucket"`
-	Brokers []string `json:"brokers"`
-	Topic   string   `json:"topic"`
-	ChainID string   `json:"chain_id"`
+	Region           string   `json:"region"`
+	NodeXBucket      string   `json:"bucket"`
+	ChainTableBucket string   `json:"chain_table_bucket"`
+	Brokers          []string `json:"brokers"`
+	Topic            string   `json:"topic"`
+	ChainID          string   `json:"chain_id"`
 }
 
 func newpipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
@@ -72,17 +73,17 @@ func newpipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 
 func (t *pipelineTracer) OnBlockchainInit(chainConfig *params.ChainConfig) {
 	log.Info("Init pipeline with param", "chainID", chainConfig.ChainID.String())
-	err := pipeline.InitPipeline(t.config.Region, t.config.Bucket, t.config.Brokers, t.config.Topic, chainConfig.ChainID)
+	err := pipeline.InitPipeline(t.config.Region, t.config.NodeXBucket, t.config.ChainTableBucket, t.config.Brokers, t.config.Topic, chainConfig.ChainID)
 	if err != nil {
 		log.Crit("Failed to init pipeline", "err", err)
 	}
 }
 
 func (t *pipelineTracer) OnClose() {
-	pipeline.Pusher.Close()
+	pipeline.NodeXPusher.Close()
 }
 
-func (t *pipelineTracer) BuildPilelineBlock(rawBlock *types.Block) ptypes.Block {
+func (t *pipelineTracer) BuildPipelineBlock(rawBlock *types.Block) ptypes.Block {
 	block := ptypes.Block{
 		ID:            rawBlock.Hash().Hex(),
 		Height:        rawBlock.Number(),
@@ -168,7 +169,7 @@ func (t *pipelineTracer) uploadBlockHeader(blockHeader *ptypes.Header) error {
 	if err != nil {
 		return err
 	}
-	err = pipeline.Pusher.UploadFileToS3(s3BlockFile)
+	err = pipeline.NodeXPusher.UploadFileToS3(s3BlockFile)
 	if err != nil {
 		return err
 	}
@@ -187,7 +188,7 @@ func (t *pipelineTracer) OnBlockStart(event tracing.BlockEvent) {
 	pipeline.PipelineCtx.BlockDiff = &ptypes.BlockStorageDiff{}
 	pipeline.PipelineCtx.BlockHeader = t.BuildPilelineBlockHeader(event.Block)
 	pipeline.PipelineCtx.BlockFile = &ptypes.BlockFile{
-		Block:            t.BuildPilelineBlock(event.Block),
+		Block:            t.BuildPipelineBlock(event.Block),
 		SpecialTransfers: t.BuildPipelineWithdrawals(event.Block),
 	}
 	pipeline.PipelineCtx.Tx = nil
@@ -206,18 +207,38 @@ func (t *pipelineTracer) OnBlockEnd(blockErr error) {
 	if err != nil {
 		log.Crit("Failed to serialize state diff", "err", err)
 	}
-	err = pipeline.Pusher.UploadFileToS3(s3file)
+	err = pipeline.NodeXPusher.UploadFileToS3(s3file)
 	if err != nil {
 		log.Crit("Failed to upload files to s3", "err", err)
 	}
 	log.Info("2.upload state diff", "block", pipeline.PipelineCtx.BlockHash.Hex())
 
-	// TODO 上传blockfile和meta到业务s3
+	// 上传block file和meta到业务s3
+	blockFile, err := processor.SerializeFile(t.config.ChainID, pipeline.PipelineCtx.BlockFile)
+	if err != nil {
+		log.Crit("Failed to serialize block file", "err", err)
+	}
+	err = pipeline.ChainTableBucketPusher.UploadFileToS3(blockFile)
+	if err != nil {
+		log.Crit("Failed to upload files to s3", "err", err)
+	}
+	log.Info("3.upload block file", "block hash", pipeline.PipelineCtx.BlockHash.Hex(), "block number", pipeline.PipelineCtx.BlockNumber)
+
+	// 上传block file validation
+	blockFileValidation, err := processor.SerializeFileValidation(t.config.ChainID, pipeline.PipelineCtx.BlockFile)
+	if err != nil {
+		log.Crit("Failed to serialize block file validation", "err", err)
+	}
+	err = pipeline.ChainTableBucketPusher.UploadFileToS3(blockFileValidation)
+	if err != nil {
+		log.Crit("Failed to upload files to s3", "err", err)
+	}
+	log.Info("4.upload block file validation", "block hash", pipeline.PipelineCtx.BlockHash.Hex(), "block number", pipeline.PipelineCtx.BlockNumber)
 
 	// push block change notification
 	if pipeline.PipelineCtx.BlockChange != nil {
 		start := time.Now()
-		pipeline.Pusher.PushBlockChangeNotification(pipeline.PipelineCtx.BlockChange)
+		pipeline.NodeXPusher.PushBlockChangeNotification(pipeline.PipelineCtx.BlockChange)
 		log.Info("Push kafka", "dropBlocks", pipeline.PipelineCtx.BlockChange.DropBlocks, "newBlocks", pipeline.PipelineCtx.BlockChange.NewBlocks, "elapsed", common.PrettyDuration(time.Since(start)))
 	}
 }
@@ -321,7 +342,7 @@ func (t *pipelineTracer) OnBalanceChange(a common.Address, prev, new *big.Int, r
 }
 
 func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisAlloc) {
-	if pipeline.Pusher.LastBlockNotice != nil {
+	if pipeline.NodeXPusher.LastBlockNotice != nil {
 		return
 	}
 
@@ -341,7 +362,7 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 	if err != nil {
 		log.Crit("Failed to serialize state diff", "err", err)
 	}
-	err = pipeline.Pusher.UploadFileToS3(s3file)
+	err = pipeline.NodeXPusher.UploadFileToS3(s3file)
 	if err != nil {
 		log.Crit("Failed to upload files to s3", "err", err)
 	}
@@ -349,7 +370,7 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 
 	// 业务s3
 	blockFile := &ptypes.BlockFile{
-		Block: t.BuildPilelineBlock(block),
+		Block: t.BuildPipelineBlock(block),
 	}
 	for addr, acc := range alloc {
 		if acc.Balance.Cmp(big.NewInt(0)) > 0 {
@@ -378,7 +399,7 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 		},
 	}
 
-	err = pipeline.Pusher.PushBlockChangeNotification(blockChanges)
+	err = pipeline.NodeXPusher.PushBlockChangeNotification(blockChanges)
 	if err != nil {
 		log.Crit("Failed to push block change notification", "err", err)
 	}

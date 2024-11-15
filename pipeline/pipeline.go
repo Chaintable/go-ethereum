@@ -23,12 +23,17 @@ type ExtraInfo struct {
 }
 
 var (
-	Pusher      *processor.PushProcessor
-	PipelineCtx *ExtraInfo
+	NodeXPusher            *processor.PushProcessor
+	ChainTableBucketPusher *processor.PushProcessor
+	PipelineCtx            *ExtraInfo
 )
 
-func InitPipeline(region string, bucket string, brokers []string, topic string, chainID *big.Int) (err error) {
-	Pusher, err = processor.NewPushProcessor(region, bucket, brokers, topic)
+func InitPipeline(region string, nodeXBucket string, chainTableBucket string, brokers []string, topic string, chainID *big.Int) (err error) {
+	NodeXPusher, err = processor.NewPushProcessor(region, nodeXBucket, brokers, topic)
+	if err != nil {
+		return err
+	}
+	ChainTableBucketPusher, err = processor.NewPushProcessor(region, chainTableBucket, brokers, topic)
 	if err != nil {
 		return err
 	}
