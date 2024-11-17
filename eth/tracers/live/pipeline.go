@@ -37,7 +37,7 @@ type pipelineTracer struct {
 
 type pipelineTracerConfig struct {
 	Region           string   `json:"region"`
-	NodeXBucket      string   `json:"bucket"`
+	NodeXBucket      string   `json:"node_x_bucket"`
 	ChainTableBucket string   `json:"chain_table_bucket"`
 	Brokers          []string `json:"brokers"`
 	Topic            string   `json:"topic"`
