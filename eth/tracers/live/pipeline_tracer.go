@@ -269,8 +269,9 @@ func (t *callTracer) OnTxEnd(receipt *types.Receipt, err error) {
 	}
 	clearFailedLogs(&t.callstack[0], false)
 	setStorageChange(&t.callstack[0])
-	if len(t.callstack) == 1 && t.callstack[0].failed() {
+	if len(t.callstack) == 1 && !t.callstack[0].failed() {
 		topCall := &t.callstack[0]
+		pipeline.PipelineCtx.BlockFile.Traces = append(pipeline.PipelineCtx.BlockFile.Traces, t.ToTrace(topCall))
 		t.addTraceAndLog(topCall)
 	}
 }
