@@ -160,19 +160,24 @@ func (t *callTracer) ToTrace(f *callFrame) ptypes.Trace {
 	if f.To != nil {
 		to = *f.To
 	}
+	value := big.NewInt(0)
+	if f.Value != nil {
+		value = f.Value
+	}
 	return ptypes.Trace{
 		ID:                f.TraceID,
 		From:              f.From.Hex(),
 		Gas:               big.NewInt(int64(f.Gas)),
 		Input:             (hexutil.Bytes)(f.Input),
 		To:                to.Hex(),
-		Value:             (*hexutil.Big)(f.Value),
+		Value:             (*hexutil.Big)(value),
 		GasUsed:           big.NewInt(int64(f.GasUsed)),
 		Output:            (hexutil.Bytes)(f.Output),
 		CallCreateType:    CallCreateType,
 		CallType:          CallType,
 		TxID:              t.txID,
 		ParentTraceID:     f.ParentTraceID,
+		PosInParentTrace:  int64(f.PosInParentTrace),
 		SelfStorageChange: f.SelfStorageChange,
 		StorageChange:     f.StorageChange,
 	}
@@ -207,9 +212,6 @@ func (t *callTracer) OnEnter(depth int, typ byte, from common.Address, to common
 	}
 	if depth == 0 {
 		call.Gas = t.gasLimit
-		call.TraceID = util.ToHash([]string{t.txID, "", "0"})
-	} else {
-		call.ParentTraceID = t.callstack[len(t.callstack)-1].TraceID
 	}
 	t.callstack = append(t.callstack, call)
 }
@@ -242,7 +244,6 @@ func (t *callTracer) OnExit(depth int, output []byte, gasUsed uint64, err error,
 	// 忽略失败的调用
 	if !call.failed() {
 		call.PosInParentTrace = len(t.callstack[size-1].Calls) + len(t.callstack[size-1].Logs)
-		call.TraceID = util.ToHash([]string{t.txID, t.callstack[size-1].TraceID, fmt.Sprintf("%d", call.PosInParentTrace)})
 		t.callstack[size-1].Calls = append(t.callstack[size-1].Calls, call)
 	}
 }
@@ -269,8 +270,10 @@ func (t *callTracer) OnTxEnd(receipt *types.Receipt, err error) {
 	}
 	clearFailedLogs(&t.callstack[0], false)
 	setStorageChange(&t.callstack[0])
-	if len(t.callstack) == 1 && t.callstack[0].failed() {
+	if len(t.callstack) == 1 && !t.callstack[0].failed() {
 		topCall := &t.callstack[0]
+		topCall.TraceID = util.ToHash([]string{t.txID, "", "0"})
+		pipeline.PipelineCtx.BlockFile.Traces = append(pipeline.PipelineCtx.BlockFile.Traces, t.ToTrace(topCall))
 		t.addTraceAndLog(topCall)
 	}
 }
@@ -294,13 +297,11 @@ func (t *callTracer) OnLog(log *types.Log) {
 	}
 
 	l := ptypes.Event{
-		Address:       log.Address.Hex(),
-		Topics:        topics,
-		Data:          log.Data,
-		Position:      int64(len(t.callstack[len(t.callstack)-1].Calls) + len(t.callstack[len(t.callstack)-1].Logs)),
-		ParentTraceID: t.callstack[len(t.callstack)-1].TraceID,
+		Address:  log.Address.Hex(),
+		Topics:   topics,
+		Data:     log.Data,
+		Position: int64(len(t.callstack[len(t.callstack)-1].Calls) + len(t.callstack[len(t.callstack)-1].Logs)),
 	}
-	l.ID = util.ToHash([]string{l.ParentTraceID, fmt.Sprintf("%d", l.Position)})
 	t.callstack[len(t.callstack)-1].Logs = append(t.callstack[len(t.callstack)-1].Logs, l)
 }
 
@@ -342,9 +343,13 @@ func setStorageChange(cf *callFrame) {
 
 func (t *callTracer) addTraceAndLog(cf *callFrame) {
 	for i := range cf.Calls {
+		cf.Calls[i].ParentTraceID = cf.TraceID
+		cf.Calls[i].TraceID = util.ToHash([]string{t.txID, cf.TraceID, fmt.Sprintf("%d", cf.Calls[i].PosInParentTrace)})
 		t.addTraceAndLog(&cf.Calls[i])
 	}
 	for i := range cf.Logs {
+		cf.Logs[i].ParentTraceID = cf.TraceID
+		cf.Logs[i].ID = util.ToHash([]string{cf.Logs[i].ParentTraceID, fmt.Sprintf("%d", cf.Logs[i].Position)})
 		pipeline.PipelineCtx.BlockFile.Events = append(pipeline.PipelineCtx.BlockFile.Events, cf.Logs[i])
 	}
 	for i := range cf.Calls {
