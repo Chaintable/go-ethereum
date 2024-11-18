@@ -384,8 +384,27 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 			blockFile.SpecialTransfers = append(blockFile.SpecialTransfers, specialTransfer)
 		}
 	}
-	// TODO
 	// upload block file and meta data
+	blockDataFile, err := processor.SerializeFile(t.config.ChainID, blockFile)
+	if err != nil {
+		log.Crit("Failed to serialize block file", "err", err)
+	}
+	err = pipeline.ChainTableBucketPusher.UploadFileToS3(blockDataFile)
+	if err != nil {
+		log.Crit("Failed to upload files to s3", "err", err)
+	}
+	log.Info("3.upload block file", "block hash", header.Hash.Hex(), "block number", header.Number.ToInt().Uint64())
+
+	// 上传block file validation
+	blockFileValidation, err := processor.SerializeFileValidation(t.config.ChainID, blockFile)
+	if err != nil {
+		log.Crit("Failed to serialize block file validation", "err", err)
+	}
+	err = pipeline.ChainTableBucketPusher.UploadFileToS3(blockFileValidation)
+	if err != nil {
+		log.Crit("Failed to upload files to s3", "err", err)
+	}
+	log.Info("4.upload block file validation", "block hash", header.Hash.Hex(), "block number", header.Number.ToInt().Uint64())
 
 	// push block change notification
 	blockChanges := &ptypes.BlockChangeNotification{
