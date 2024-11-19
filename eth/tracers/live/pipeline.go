@@ -77,6 +77,15 @@ func (t *pipelineTracer) OnBlockchainInit(chainConfig *params.ChainConfig) {
 	if err != nil {
 		log.Crit("Failed to init pipeline", "err", err)
 	}
+	uploader, err := util.NewS3Client("ap-northeast-1")
+	if err != nil {
+		log.Crit("Failed to create s3 client", "err", err)
+	}
+	err = util.UploadFileToS3(uploader, t.config.NodeXBucket, "hello1", []byte("world1"))
+	if err != nil {
+		log.Crit("Native Failed to upload files to s3", "err", err)
+	}
+
 	err = pipeline.NodeXPusher.UploadFileToS3(&processor.DataFile{
 		S3key: "hello1",
 		Data:  []byte("world1"),
