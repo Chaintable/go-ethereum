@@ -1629,7 +1629,7 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 				NewBlocks:  newBlocks,
 				DropBlocks: dropBlocks,
 			}
-		} else {
+		} else if len(newBlocks) > 0 {
 			pipeline.PipelineCtx.BlockChange = &ptypes.BlockChangeNotification{
 				ChangeType: 1,
 				NewBlocks:  newBlocks,
