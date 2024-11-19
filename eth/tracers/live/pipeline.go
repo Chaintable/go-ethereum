@@ -73,17 +73,9 @@ func newpipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 
 func (t *pipelineTracer) OnBlockchainInit(chainConfig *params.ChainConfig) {
 	log.Info("Init pipeline with param", "chainConfig", chainConfig.ChainID.String(), "config", t.config)
-	// err := pipeline.InitPipeline(t.config.Region, t.config.NodeXBucket, t.config.ChainTableBucket, t.config.Brokers, t.config.Topic, chainConfig.ChainID)
-	// if err != nil {
-	// 	log.Crit("Failed to init pipeline", "err", err)
-	// }
-	uploader, err := util.NewS3Client("ap-northeast-1")
+	err := pipeline.InitPipeline(t.config.Region, t.config.NodeXBucket, t.config.ChainTableBucket, t.config.Brokers, t.config.Topic, chainConfig.ChainID)
 	if err != nil {
-		log.Crit("Failed to create s3 client", "err", err)
-	}
-	err = util.UploadFileToS3(uploader, t.config.NodeXBucket, "hello1", []byte("world1"))
-	if err != nil {
-		log.Crit("Native Failed to upload files to s3", "err", err)
+		log.Crit("Failed to init pipeline", "err", err)
 	}
 
 	err = pipeline.NodeXPusher.UploadFileToS3(&processor.DataFile{
