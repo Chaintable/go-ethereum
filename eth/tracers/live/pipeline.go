@@ -77,6 +77,16 @@ func (t *pipelineTracer) OnBlockchainInit(chainConfig *params.ChainConfig) {
 	if err != nil {
 		log.Crit("Failed to init pipeline", "err", err)
 	}
+	pipeline.NodeXPusher.UploadFileToS3(&processor.DataFile{
+		S3key: "hello1",
+		Data:  []byte("world1"),
+	})
+	log.Info("NodeXPusher Upload hello1 to s3", "t.config.NodeXBucket", t.config.NodeXBucket)
+	pipeline.ChainTableBucketPusher.UploadFileToS3(&processor.DataFile{
+		S3key: "hello2",
+		Data:  []byte("world1"),
+	})
+	log.Info("ChainTableBucketPusher Upload hello2 to s3", "t.config.ChainTableBucket", t.config.ChainTableBucket)
 }
 
 func (t *pipelineTracer) OnClose() {
