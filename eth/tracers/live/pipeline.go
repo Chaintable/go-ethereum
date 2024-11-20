@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/Chaintable/pipeline/processor"
@@ -205,38 +206,80 @@ func (t *pipelineTracer) OnBlockStart(event tracing.BlockEvent) {
 }
 
 func (t *pipelineTracer) OnBlockEnd(blockErr error) {
-	// 上传state diff
-	s3file, err := processor.SerializeStateDiff(t.config.ChainID, pipeline.PipelineCtx.BlockDiff)
-	if err != nil {
-		log.Crit("Failed to serialize state diff", "err", err)
-	}
-	err = pipeline.NodeXPusher.UploadFileToS3(s3file)
-	if err != nil {
-		log.Crit("Failed to upload files to s3", "err", err)
-	}
-	log.Info("2.upload state diff", "block", pipeline.PipelineCtx.BlockHash.Hex())
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var uploadErrs []error
 
-	// 上传block file和meta到业务s3
-	blockFile, err := processor.SerializeFile(t.config.ChainID, pipeline.PipelineCtx.BlockFile)
-	if err != nil {
-		log.Crit("Failed to serialize block file", "err", err)
+	// Helper function to handle errors safely
+	handleError := func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			uploadErrs = append(uploadErrs, err)
+		}
 	}
-	err = pipeline.ChainTableBucketPusher.UploadFileToS3(blockFile)
-	if err != nil {
-		log.Crit("Failed to upload files to s3", "err", err)
-	}
-	log.Info("3.upload block file", "block hash", pipeline.PipelineCtx.BlockHash.Hex(), "block number", pipeline.PipelineCtx.BlockNumber)
 
-	// 上传block file validation
-	blockFileValidation, err := processor.SerializeFileValidation(t.config.ChainID, pipeline.PipelineCtx.BlockFile)
-	if err != nil {
-		log.Crit("Failed to serialize block file validation", "err", err)
+	// 上传 state diff
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s3file, err := processor.SerializeStateDiff(t.config.ChainID, pipeline.PipelineCtx.BlockDiff)
+		if err != nil {
+			handleError(err)
+			return
+		}
+		err = pipeline.NodeXPusher.UploadFileToS3(s3file)
+		if err != nil {
+			handleError(err)
+			return
+		}
+		log.Info("2.upload state diff", "block", pipeline.PipelineCtx.BlockHash.Hex())
+	}()
+
+	// 上传 block file
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		blockFile, err := processor.SerializeFile(t.config.ChainID, pipeline.PipelineCtx.BlockFile)
+		if err != nil {
+			handleError(err)
+			return
+		}
+		err = pipeline.ChainTableBucketPusher.UploadFileToS3(blockFile)
+		if err != nil {
+			handleError(err)
+			return
+		}
+		log.Info("3.upload block file", "block hash", pipeline.PipelineCtx.BlockHash.Hex(), "block number", pipeline.PipelineCtx.BlockNumber)
+	}()
+
+	// 上传 block file validation
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		blockFileValidation, err := processor.SerializeFileValidation(t.config.ChainID, pipeline.PipelineCtx.BlockFile)
+		if err != nil {
+			handleError(err)
+			return
+		}
+		err = pipeline.ChainTableBucketPusher.UploadFileToS3(blockFileValidation)
+		if err != nil {
+			handleError(err)
+			return
+		}
+		log.Info("4.upload block file validation", "block hash", pipeline.PipelineCtx.BlockHash.Hex(), "block number", pipeline.PipelineCtx.BlockNumber)
+	}()
+
+	// 等待所有上传完成
+	wg.Wait()
+
+	// 检查是否有错误
+	if len(uploadErrs) > 0 {
+		for _, err := range uploadErrs {
+			log.Error("Upload error", "err", err)
+		}
+		log.Crit("One or more uploads failed")
 	}
-	err = pipeline.ChainTableBucketPusher.UploadFileToS3(blockFileValidation)
-	if err != nil {
-		log.Crit("Failed to upload files to s3", "err", err)
-	}
-	log.Info("4.upload block file validation", "block hash", pipeline.PipelineCtx.BlockHash.Hex(), "block number", pipeline.PipelineCtx.BlockNumber)
 
 	// push block change notification
 	if pipeline.PipelineCtx.BlockChange != nil {
