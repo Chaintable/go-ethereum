@@ -1558,6 +1558,7 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 				BlockNumber: headerb.Number.Uint64(),
 				Hash:        headerb.Hash(),
 				ParentHash:  headerb.ParentHash,
+				Timestamp:   headerb.Time,
 			}
 		}
 	}
@@ -1571,6 +1572,7 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 				BlockNumber: headera.Number.Uint64(),
 				Hash:        headera.Hash(),
 				ParentHash:  headera.ParentHash,
+				Timestamp:   headera.Time,
 			}
 		}
 
@@ -1583,6 +1585,7 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 				BlockNumber: headerb.Number.Uint64(),
 				Hash:        headerb.Hash(),
 				ParentHash:  headerb.ParentHash,
+				Timestamp:   headerb.Time,
 			}
 		}
 	}
@@ -1622,6 +1625,7 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 			BlockNumber: block.NumberU64(),
 			Hash:        block.Hash(),
 			ParentHash:  block.ParentHash(),
+			Timestamp:   block.Time(),
 		})
 		if len(dropBlocks) > 0 {
 			pipeline.PipelineCtx.BlockChange = &ptypes.BlockChangeNotification{

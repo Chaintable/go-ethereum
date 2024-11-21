@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -94,7 +95,7 @@ func (t *pipelineTracer) BuildPipelineBlock(rawBlock *types.Block) ptypes.Block 
 		Height:        rawBlock.Number(),
 		ParentID:      rawBlock.ParentHash().Hex(),
 		BaseFeePerGas: rawBlock.BaseFee(),
-		Miner:         rawBlock.Coinbase().Hex(),
+		Miner:         strings.ToLower(rawBlock.Coinbase().Hex()),
 		GasLimit:      big.NewInt(int64(rawBlock.GasLimit())),
 		GasUsed:       big.NewInt(int64(rawBlock.GasUsed())),
 		Timestamp:     rawBlock.Time(),
@@ -106,13 +107,13 @@ func (t *pipelineTracer) BuildPipelineWithdrawals(rawBlock *types.Block) []ptype
 	res := make([]ptypes.SpecialTransfer, 0)
 	for _, withdrawal := range rawBlock.Withdrawals() {
 		specialTransfer := ptypes.SpecialTransfer{
-			FromAddress: "0x00000000219ab540356cBB839Cbe05303d7705Fa", //eth2 合约
-			ToAddress:   withdrawal.Address.Hex(),
+			FromAddress: strings.ToLower("0x00000000219ab540356cBB839Cbe05303d7705Fa"), //eth2 合约
+			ToAddress:   strings.ToLower(withdrawal.Address.Hex()),
 			Value:       (*hexutil.Big)(big.NewInt(int64(withdrawal.Amount))),
 			Memo:        "beacon_withdrawl",
 			Idx:         big.NewInt(int64(withdrawal.Index)),
 		}
-		specialTransfer.ID = util.ToHash([]string{rawBlock.Hash().Hex(), withdrawal.Address.Hex(), fmt.Sprintf("%d", withdrawal.Index)})
+		specialTransfer.ID = util.ToHash([]string{rawBlock.Hash().Hex(), specialTransfer.ToAddress, fmt.Sprintf("%d", withdrawal.Index)})
 		res = append(res, specialTransfer)
 	}
 
@@ -155,16 +156,6 @@ func (t *pipelineTracer) BuildPilelineBlockHeader(block *types.Block) *ptypes.He
 	}
 	if block.Header().RequestsHash != nil {
 		blockHeader.RequestsRoot = block.Header().RequestsHash
-	}
-	uncles := block.Uncles()
-	uncleHashes := make([]common.Hash, len(uncles))
-	for i, uncle := range uncles {
-		uncleHashes[i] = uncle.Hash()
-	}
-	txs := block.Transactions()
-	txhashes := make([]common.Hash, len(txs))
-	for i, tx := range txs {
-		txhashes[i] = tx.Hash()
 	}
 	return &blockHeader
 }
@@ -332,18 +323,26 @@ func (t *pipelineTracer) buildPipelineTransaction(tx *types.Transaction, receipt
 	}
 	transaction := ptypes.Transaction{
 		ID:               tx.Hash().Hex(),
-		From:             from.Hex(),
-		To:               to.Hex(),
+		From:             strings.ToLower(from.Hex()),
+		To:               strings.ToLower(to.Hex()),
 		Gas:              big.NewInt(int64(tx.Gas())),
 		GasPrice:         gasPrice,
 		GasUsed:          big.NewInt(int64(receipt.GasUsed)),
 		Status:           receipt.Status == types.ReceiptStatusSuccessful,
-		GasFeeCap:        tx.GasFeeCap(),
-		GasTipCap:        tx.GasTipCap(),
+		GasFeeCap:        common.Big0,
+		GasTipCap:        common.Big0,
 		Input:            tx.Data(),
 		Nonce:            big.NewInt(int64(tx.Nonce())),
 		TransactionIndex: int64(receipt.TransactionIndex),
 		Value:            (*hexutil.Big)(tx.Value()),
+	}
+	switch tx.Type() {
+	case types.DynamicFeeTxType:
+		transaction.GasFeeCap = tx.GasFeeCap()
+		transaction.GasTipCap = tx.GasTipCap()
+	case types.BlobTxType:
+		transaction.GasFeeCap = tx.GasFeeCap()
+		transaction.GasTipCap = tx.GasTipCap()
 	}
 	return transaction
 }
@@ -394,27 +393,29 @@ func (t *pipelineTracer) OnLog(log *types.Log) {
 	t.callTracer.OnLog(log)
 }
 
-func (t *pipelineTracer) OnBalanceChange(a common.Address, prev, new *big.Int, reason tracing.BalanceChangeReason) {
+func (t *pipelineTracer) OnBalanceChange(a common.Address, prevBalance, newBalance *big.Int, reason tracing.BalanceChangeReason) {
+	diff := new(big.Int).Sub(newBalance, prevBalance)
+
 	if reason == tracing.BalanceIncreaseRewardMineUncle || reason == tracing.BalanceIncreaseRewardMineBlock {
 		specialTransfer := ptypes.SpecialTransfer{
 			FromAddress: common.Address{}.Hex(),
-			ToAddress:   a.Hex(),
-			Value:       (*hexutil.Big)(new),
+			ToAddress:   strings.ToLower(a.Hex()),
+			Value:       (*hexutil.Big)(diff),
 			Memo:        "block_reward",
 			Idx:         big.NewInt(int64(reason)),
 		}
-		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), a.Hex(), fmt.Sprintf("%d", reason)})
+		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), specialTransfer.ToAddress, fmt.Sprintf("%d", reason)})
 		pipeline.PipelineCtx.BlockFile.SpecialTransfers = append(pipeline.PipelineCtx.BlockFile.SpecialTransfers, specialTransfer)
 	}
 	if reason == tracing.BalanceIncreaseRewardTransactionFee {
 		specialTransfer := ptypes.SpecialTransfer{
 			FromAddress: common.Address{}.Hex(),
-			ToAddress:   a.Hex(),
-			Value:       (*hexutil.Big)(new),
+			ToAddress:   strings.ToLower(a.Hex()),
+			Value:       (*hexutil.Big)(diff),
 			Memo:        "gasfee_reward",
 			Idx:         big.NewInt(int64(reason)),
 		}
-		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), a.Hex(), fmt.Sprintf("%d", reason)})
+		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), specialTransfer.ToAddress, fmt.Sprintf("%d", reason)})
 		pipeline.PipelineCtx.BlockFile.SpecialTransfers = append(pipeline.PipelineCtx.BlockFile.SpecialTransfers, specialTransfer)
 	}
 }
@@ -450,11 +451,12 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 		if acc.Balance.Cmp(big.NewInt(0)) > 0 {
 			specialTransfer := ptypes.SpecialTransfer{
 				FromAddress: common.Address{}.Hex(),
-				ToAddress:   addr.Hex(),
+				ToAddress:   strings.ToLower(addr.Hex()),
 				Value:       (*hexutil.Big)(acc.Balance),
 				Memo:        "genesis",
 				Idx:         big.NewInt(0),
 			}
+			specialTransfer.ID = util.ToHash([]string{block.Hash().Hex(), specialTransfer.ToAddress, fmt.Sprintf("%d", specialTransfer.Idx)})
 			blockFile.SpecialTransfers = append(blockFile.SpecialTransfers, specialTransfer)
 		}
 	}
@@ -480,6 +482,7 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 				Hash:        block.Hash(),
 				ParentHash:  block.ParentHash(),
 				BlockNumber: block.NumberU64(),
+				Timestamp:   block.Time(),
 			},
 		},
 	}

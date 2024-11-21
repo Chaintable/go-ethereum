@@ -210,9 +210,6 @@ func (t *callTracer) OnEnter(depth int, typ byte, from common.Address, to common
 		Gas:   gas,
 		Value: value,
 	}
-	if depth == 0 {
-		call.Gas = t.gasLimit
-	}
 	t.callstack = append(t.callstack, call)
 }
 
@@ -265,9 +262,6 @@ func (t *callTracer) OnTxEnd(receipt *types.Receipt, err error) {
 	if err != nil {
 		return
 	}
-	if receipt != nil {
-		t.callstack[0].GasUsed = receipt.GasUsed
-	}
 	clearFailedLogs(&t.callstack[0], false)
 	setStorageChange(&t.callstack[0])
 	if len(t.callstack) == 1 && !t.callstack[0].failed() {
@@ -295,10 +289,17 @@ func (t *callTracer) OnLog(log *types.Log) {
 	for i, topic := range log.Topics {
 		topics[i] = topic.Hex()
 	}
+	var selector string
+	var remainingTopics []string
 
+	if len(topics) > 0 {
+		selector = topics[0]
+		remainingTopics = topics[1:]
+	}
 	l := ptypes.Event{
-		Address:  log.Address.Hex(),
-		Topics:   topics,
+		Address:  strings.ToLower(log.Address.Hex()),
+		Selector: selector,
+		Topics:   remainingTopics,
 		Data:     log.Data,
 		Position: int64(len(t.callstack[len(t.callstack)-1].Calls) + len(t.callstack[len(t.callstack)-1].Logs)),
 	}
