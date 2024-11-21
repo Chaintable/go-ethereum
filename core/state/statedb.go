@@ -1283,6 +1283,9 @@ func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool) (*stateU
 		if pipeline.PipelineCtx != nil && pipeline.PipelineCtx.BlockDiff != nil {
 			ret.FillStateDiff(pipeline.PipelineCtx.BlockDiff)
 		}
+		if s.logger != nil && s.logger.OnCommit != nil {
+			s.logger.OnCommit()
+		}
 		// If trie database is enabled, commit the state update as a new layer
 		if db := s.db.TrieDB(); db != nil {
 			start := time.Now()

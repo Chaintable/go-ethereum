@@ -69,6 +69,7 @@ func newpipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		OnOpcode:         t.OnOpcode,
 		OnBalanceChange:  t.OnBalanceChange,
 		OnGenesisBlock:   t.OnGenesisBlock,
+		OnCommit:         t.OnCommit,
 	}, nil
 }
 
@@ -236,7 +237,7 @@ func (t *pipelineTracer) uploadblockFileValidation(blockFile *ptypes.BlockFile) 
 	return nil
 }
 
-func (t *pipelineTracer) OnBlockEnd(blockErr error) {
+func (t *pipelineTracer) OnCommit() {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var uploadErrs []error
@@ -307,12 +308,16 @@ func (t *pipelineTracer) OnBlockEnd(blockErr error) {
 		}
 		log.Crit("One or more uploads failed")
 	}
+	log.Info("Upload to s3", "elapsed", common.PrettyDuration(s3Elapsed))
+}
+
+func (t *pipelineTracer) OnBlockEnd(blockErr error) {
 
 	// push block change notification
 	if pipeline.PipelineCtx.BlockChange != nil {
 		start := time.Now()
 		pipeline.NodeXPusher.PushBlockChangeNotification(pipeline.PipelineCtx.BlockChange)
-		log.Info("Push kafka", "dropBlocks", pipeline.PipelineCtx.BlockChange.DropBlocks, "newBlocks", pipeline.PipelineCtx.BlockChange.NewBlocks, "kafka elapsed", common.PrettyDuration(time.Since(start)), "s3 elapsed", common.PrettyDuration(s3Elapsed))
+		log.Info("Push kafka", "dropBlocks", pipeline.PipelineCtx.BlockChange.DropBlocks, "newBlocks", pipeline.PipelineCtx.BlockChange.NewBlocks, "kafka elapsed", common.PrettyDuration(time.Since(start)))
 	}
 }
 
