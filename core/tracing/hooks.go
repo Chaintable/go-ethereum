@@ -168,6 +168,8 @@ type (
 
 	// LogHook is called when a log is emitted.
 	LogHook = func(log *types.Log)
+
+	CommitHook = func()
 )
 
 type Hooks struct {
@@ -194,6 +196,9 @@ type Hooks struct {
 	OnCodeChange    CodeChangeHook
 	OnStorageChange StorageChangeHook
 	OnLog           LogHook
+
+	// custom hook
+	OnCommit CommitHook
 }
 
 // BalanceChangeReason is used to indicate the reason for a balance change, useful
