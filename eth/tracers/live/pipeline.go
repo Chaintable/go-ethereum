@@ -402,6 +402,12 @@ func (t *pipelineTracer) OnBalanceChange(a common.Address, prevBalance, newBalan
 	diff := new(big.Int).Sub(newBalance, prevBalance)
 
 	if reason == tracing.BalanceIncreaseRewardMineUncle || reason == tracing.BalanceIncreaseRewardMineBlock {
+		for i := range pipeline.PipelineCtx.BlockFile.SpecialTransfers {
+			sp := &pipeline.PipelineCtx.BlockFile.SpecialTransfers[i]
+			if sp.ToAddress == strings.ToLower(a.Hex()) && sp.Memo == "block_reward" {
+				sp.Value = (*hexutil.Big)(new(big.Int).Add(sp.Value.ToInt(), diff))
+			}
+		}
 		specialTransfer := ptypes.SpecialTransfer{
 			FromAddress: common.Address{}.Hex(),
 			ToAddress:   strings.ToLower(a.Hex()),
@@ -409,10 +415,17 @@ func (t *pipelineTracer) OnBalanceChange(a common.Address, prevBalance, newBalan
 			Memo:        "block_reward",
 			Idx:         big.NewInt(int64(reason)),
 		}
-		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), specialTransfer.ToAddress, fmt.Sprintf("%d", reason)})
+		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), specialTransfer.ToAddress, fmt.Sprintf("%d", tracing.BalanceIncreaseRewardMineBlock)})
 		pipeline.PipelineCtx.BlockFile.SpecialTransfers = append(pipeline.PipelineCtx.BlockFile.SpecialTransfers, specialTransfer)
 	}
 	if reason == tracing.BalanceIncreaseRewardTransactionFee {
+		for i := range pipeline.PipelineCtx.BlockFile.SpecialTransfers {
+			sp := &pipeline.PipelineCtx.BlockFile.SpecialTransfers[i]
+			if sp.ToAddress == strings.ToLower(a.Hex()) && sp.Memo == "gasfee_reward" {
+				sp.Value = (*hexutil.Big)(new(big.Int).Add(sp.Value.ToInt(), diff))
+				return
+			}
+		}
 		specialTransfer := ptypes.SpecialTransfer{
 			FromAddress: common.Address{}.Hex(),
 			ToAddress:   strings.ToLower(a.Hex()),
@@ -420,7 +433,7 @@ func (t *pipelineTracer) OnBalanceChange(a common.Address, prevBalance, newBalan
 			Memo:        "gasfee_reward",
 			Idx:         big.NewInt(int64(reason)),
 		}
-		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), specialTransfer.ToAddress, fmt.Sprintf("%d", reason)})
+		specialTransfer.ID = util.ToHash([]string{pipeline.PipelineCtx.BlockHash.Hex(), specialTransfer.ToAddress, fmt.Sprintf("%d", tracing.BalanceIncreaseRewardTransactionFee)})
 		pipeline.PipelineCtx.BlockFile.SpecialTransfers = append(pipeline.PipelineCtx.BlockFile.SpecialTransfers, specialTransfer)
 	}
 }
