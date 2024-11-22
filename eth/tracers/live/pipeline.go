@@ -22,7 +22,6 @@ import (
 )
 
 // 需要上传3种data
-// 在生成时就上传
 // 1. block
 // 2. state diff
 // 3. block file
@@ -94,11 +93,14 @@ func (t *pipelineTracer) BuildPipelineBlock(rawBlock *types.Block) ptypes.Block 
 		ID:            rawBlock.Hash().Hex(),
 		Height:        rawBlock.Number(),
 		ParentID:      rawBlock.ParentHash().Hex(),
-		BaseFeePerGas: rawBlock.BaseFee(),
+		BaseFeePerGas: big.NewInt(0),
 		Miner:         strings.ToLower(rawBlock.Coinbase().Hex()),
 		GasLimit:      big.NewInt(int64(rawBlock.GasLimit())),
 		GasUsed:       big.NewInt(int64(rawBlock.GasUsed())),
 		Timestamp:     rawBlock.Time(),
+	}
+	if rawBlock.Header().BaseFee != nil {
+		block.BaseFeePerGas = rawBlock.Header().BaseFee
 	}
 	return block
 }
@@ -174,6 +176,9 @@ func (t *pipelineTracer) OnBlockStart(event tracing.BlockEvent) {
 	pipeline.PipelineCtx.BlockFile = &ptypes.BlockFile{
 		Block:            t.BuildPipelineBlock(event.Block),
 		SpecialTransfers: t.BuildPipelineWithdrawals(event.Block),
+		Events:           make([]ptypes.Event, 0),
+		Txs:              make([]ptypes.Transaction, 0),
+		Traces:           make([]ptypes.Trace, 0),
 	}
 	pipeline.PipelineCtx.Tx = nil
 	pipeline.PipelineCtx.From = common.Address{}
