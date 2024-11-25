@@ -249,6 +249,7 @@ func (t *callTracer) captureEnd(output []byte, gasUsed uint64, err error, revert
 	if len(t.callstack) != 1 {
 		return
 	}
+	t.callstack[0].GasUsed = gasUsed
 	t.callstack[0].processOutput(output, err, reverted)
 }
 
