@@ -406,6 +406,7 @@ func (t *pipelineTracer) OnBalanceChange(a common.Address, prevBalance, newBalan
 			sp := &pipeline.PipelineCtx.BlockFile.SpecialTransfers[i]
 			if sp.ToAddress == strings.ToLower(a.Hex()) && sp.Memo == "block_reward" {
 				sp.Value = (*hexutil.Big)(new(big.Int).Add(sp.Value.ToInt(), diff))
+				return
 			}
 		}
 		specialTransfer := ptypes.SpecialTransfer{
