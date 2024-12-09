@@ -410,7 +410,7 @@ func (t *pipelineTracer) OnBalanceChange(a common.Address, prevBalance, newBalan
 			}
 		}
 		specialTransfer := ptypes.SpecialTransfer{
-			FromAddress: common.Address{}.Hex(),
+			FromAddress: strings.ToLower(common.Address{}.Hex()),
 			ToAddress:   strings.ToLower(a.Hex()),
 			Value:       (*hexutil.Big)(diff),
 			Memo:        "block_reward",
@@ -428,7 +428,7 @@ func (t *pipelineTracer) OnBalanceChange(a common.Address, prevBalance, newBalan
 			}
 		}
 		specialTransfer := ptypes.SpecialTransfer{
-			FromAddress: common.Address{}.Hex(),
+			FromAddress: strings.ToLower(common.Address{}.Hex()),
 			ToAddress:   strings.ToLower(a.Hex()),
 			Value:       (*hexutil.Big)(diff),
 			Memo:        "gasfee_reward",
@@ -469,7 +469,7 @@ func (t *pipelineTracer) OnGenesisBlock(block *types.Block, alloc types.GenesisA
 	for addr, acc := range alloc {
 		if acc.Balance.Cmp(big.NewInt(0)) > 0 {
 			specialTransfer := ptypes.SpecialTransfer{
-				FromAddress: common.Address{}.Hex(),
+				FromAddress: strings.ToLower(common.Address{}.Hex()),
 				ToAddress:   strings.ToLower(addr.Hex()),
 				Value:       (*hexutil.Big)(acc.Balance),
 				Memo:        "genesis",

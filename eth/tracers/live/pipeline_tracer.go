@@ -166,10 +166,10 @@ func (t *callTracer) ToTrace(f *callFrame) ptypes.Trace {
 	}
 	return ptypes.Trace{
 		ID:                f.TraceID,
-		From:              f.From.Hex(),
+		From:              strings.ToLower(f.From.Hex()),
 		Gas:               big.NewInt(int64(f.Gas)),
 		Input:             (hexutil.Bytes)(f.Input),
-		To:                to.Hex(),
+		To:                strings.ToLower(to.Hex()),
 		Value:             (*hexutil.Big)(value),
 		GasUsed:           big.NewInt(int64(f.GasUsed)),
 		Output:            (hexutil.Bytes)(f.Output),
