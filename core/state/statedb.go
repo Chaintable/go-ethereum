@@ -27,7 +27,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Chaintable/pipeline/tracer"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
@@ -1280,11 +1279,21 @@ func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool) (*stateU
 			}
 			s.SnapshotCommits += time.Since(start)
 		}
-		if tracer.BlockCtx != nil && tracer.BlockCtx.BlockDiff != nil {
-			ret.FillStateDiff(tracer.BlockCtx.BlockDiff)
-		}
 		if s.logger != nil {
-			tracer.OnCommit()
+			contracts := make(map[common.Hash][]byte)
+			for _, code := range ret.codes {
+				contracts[code.hash] = code.blob
+			}
+			s.logger.OnCommit(
+				ret.originRoot,
+				ret.root,
+				ret.destructs,
+				ret.accounts,
+				ret.accountsOrigin,
+				ret.storages,
+				ret.storagesOrigin,
+				contracts,
+			)
 		}
 		// If trie database is enabled, commit the state update as a new layer
 		if db := s.db.TrieDB(); db != nil {
