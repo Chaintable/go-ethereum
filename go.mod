@@ -154,4 +154,6 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/Chaintable/pipeline => /home/zgy/Work/pipeline
+replace (
+	github.com/Chaintable/pipeline v0.0.20 => ../pipeline
+)
