@@ -32,7 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/pipeline"
 )
 
@@ -113,28 +112,7 @@ type callTracerConfig struct {
 	WithLog     bool `json:"withLog"`     // If true, call tracer will collect event logs
 }
 
-// newCallTracer returns a native go tracer which tracks
-// call frames of a tx, and implements vm.EVMLogger.
-func newCallTracer(ctx *tracers.Context) *tracers.Tracer {
-	t := &callTracer{callstack: make([]callFrame, 0, 1), config: callTracerConfig{
-		OnlyTopCall: false,
-		WithLog:     true,
-	}}
-	return &tracers.Tracer{
-		Hooks: &tracing.Hooks{
-			OnTxStart: t.OnTxStart,
-			OnTxEnd:   t.OnTxEnd,
-			OnEnter:   t.OnEnter,
-			OnExit:    t.OnExit,
-			OnLog:     t.OnLog,
-			OnOpcode:  t.OnOpcode,
-		},
-		GetResult: t.GetResult,
-		Stop:      t.Stop,
-	}
-}
-
-func newCallTracerRaw(ctx *tracers.Context) *callTracer {
+func newCallTracerRaw() *callTracer {
 	t := &callTracer{callstack: make([]callFrame, 0, 1), config: callTracerConfig{
 		OnlyTopCall: false,
 		WithLog:     true,

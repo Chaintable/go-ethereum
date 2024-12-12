@@ -32,7 +32,6 @@ func init() {
 
 type pipelineTracer struct {
 	config     pipelineTracerConfig
-	ctx        *tracers.Context
 	callTracer *callTracer
 }
 
@@ -163,10 +162,6 @@ func (t *pipelineTracer) BuildPilelineBlockHeader(block *types.Block) *ptypes.He
 }
 
 func (t *pipelineTracer) OnBlockStart(event tracing.BlockEvent) {
-	t.ctx = &tracers.Context{
-		BlockNumber: event.Block.Number(),
-		BlockHash:   event.Block.Hash(),
-	}
 	pipeline.PipelineCtx = &pipeline.ExtraInfo{
 		BlockNumber: event.Block.Number().Uint64(),
 		BlockHash:   event.Block.Hash(),
@@ -353,8 +348,7 @@ func (t *pipelineTracer) buildPipelineTransaction(tx *types.Transaction, receipt
 }
 
 func (t *pipelineTracer) OnTxStart(vm *tracing.VMContext, tx *types.Transaction, from common.Address) {
-	t.ctx.TxHash = tx.Hash()
-	callTracer := newCallTracerRaw(t.ctx)
+	callTracer := newCallTracerRaw()
 	t.callTracer = callTracer
 	t.callTracer.OnTxStart(vm, tx, from)
 	pipeline.PipelineCtx.Tx = tx
@@ -363,7 +357,6 @@ func (t *pipelineTracer) OnTxStart(vm *tracing.VMContext, tx *types.Transaction,
 
 func (t *pipelineTracer) OnTxEnd(receipt *types.Receipt, err error) {
 	t.callTracer.OnTxEnd(receipt, err)
-	t.ctx.TxIndex += 1
 	t.callTracer = nil
 
 	tx := t.buildPipelineTransaction(pipeline.PipelineCtx.Tx, receipt, pipeline.PipelineCtx.From)
