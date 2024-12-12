@@ -197,8 +197,8 @@ type Hooks struct {
 	OnStorageChange StorageChangeHook
 	OnLog           LogHook
 
-	// custom hook
-	OnCommit CommitHook
+	//// custom hook
+	//OnCommit CommitHook
 }
 
 // BalanceChangeReason is used to indicate the reason for a balance change, useful

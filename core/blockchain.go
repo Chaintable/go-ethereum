@@ -20,6 +20,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"github.com/Chaintable/pipeline/tracer"
 	"io"
 	"math/big"
 	"runtime"
@@ -50,7 +51,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/pipeline"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
@@ -1619,8 +1619,8 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 	// 先确保 pipeline tracer 不为空，然后再判断是否需要push kafka
 	// 上一个push kafka的block, 必然存在(至少有genesis block)
 	// 上一个push kafka的block比当前的head block还要新，说明有unwind回退，不需要处理, 即使是fork，等有更新的block的时候再一起push
-	if pipeline.NodeXPusher != nil && pipeline.NodeXPusher.LastBlockNotice.NewBlocks[0].BlockNumber <= block.NumberU64() {
-		lastPushBlock := pipeline.NodeXPusher.LastBlockNotice.NewBlocks[0]
+	if tracer.NodeXPusher != nil && tracer.NodeXPusher.LastBlockNotice.NewBlocks[0].BlockNumber <= block.NumberU64() {
+		lastPushBlock := tracer.NodeXPusher.LastBlockNotice.NewBlocks[0]
 		_, dropBlocks, newBlocks := bc.getCommonAncestor(lastPushBlock, ptypes.BlockContext{
 			BlockNumber: block.NumberU64(),
 			Hash:        block.Hash(),
@@ -1628,13 +1628,13 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 			Timestamp:   block.Time(),
 		})
 		if len(dropBlocks) > 0 {
-			pipeline.PipelineCtx.BlockChange = &ptypes.BlockChangeNotification{
+			tracer.BlockCtx.BlockChange = &ptypes.BlockChangeNotification{
 				ChangeType: 2,
 				NewBlocks:  newBlocks,
 				DropBlocks: dropBlocks,
 			}
 		} else if len(newBlocks) > 0 {
-			pipeline.PipelineCtx.BlockChange = &ptypes.BlockChangeNotification{
+			tracer.BlockCtx.BlockChange = &ptypes.BlockChangeNotification{
 				ChangeType: 1,
 				NewBlocks:  newBlocks,
 			}

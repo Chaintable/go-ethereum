@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Chaintable/pipeline/tracer"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
@@ -36,7 +37,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/pipeline"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/triestate"
@@ -1280,11 +1280,11 @@ func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool) (*stateU
 			}
 			s.SnapshotCommits += time.Since(start)
 		}
-		if pipeline.PipelineCtx != nil && pipeline.PipelineCtx.BlockDiff != nil {
-			ret.FillStateDiff(pipeline.PipelineCtx.BlockDiff)
+		if tracer.BlockCtx != nil && tracer.BlockCtx.BlockDiff != nil {
+			ret.FillStateDiff(tracer.BlockCtx.BlockDiff)
 		}
-		if s.logger != nil && s.logger.OnCommit != nil {
-			s.logger.OnCommit()
+		if s.logger != nil {
+			tracer.OnCommit()
 		}
 		// If trie database is enabled, commit the state update as a new layer
 		if db := s.db.TrieDB(); db != nil {
