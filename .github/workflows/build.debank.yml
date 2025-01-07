@@ -91,26 +91,26 @@ jobs:
           provenance: false
 
 
-  merge-docker-manifest:
-    runs-on: [self-hosted, ops]
-    needs: build-artifacts
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
+  # merge-docker-manifest:
+  #   runs-on: [self-hosted, ops]
+  #   needs: build-artifacts
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v2
+  #       with:
+  #         ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Set env
-        run: |
-          echo "REVISION=$(git rev-parse --short=8 HEAD)" >> $GITHUB_ENV
+  #     - name: Set env
+  #       run: |
+  #         echo "REVISION=$(git rev-parse --short=8 HEAD)" >> $GITHUB_ENV
 
-      - name: Merge manifest
-        run: |
-          docker pull --platform=linux/amd64 ${REGISTRY}/${IMAGE}:amd64-${REVISION}
-          docker pull --platform=linux/arm64 ${REGISTRY}/${IMAGE}:arm64-${REVISION}
-          docker buildx imagetools create --tag ${REGISTRY}/${IMAGE}:${REVISION} ${REGISTRY}/${IMAGE}:amd64-${REVISION} ${REGISTRY}/${IMAGE}:arm64-${REVISION}
+  #     - name: Merge manifest
+  #       run: |
+  #         docker pull --platform=linux/amd64 ${REGISTRY}/${IMAGE}:amd64-${REVISION}
+  #         docker pull --platform=linux/arm64 ${REGISTRY}/${IMAGE}:arm64-${REVISION}
+  #         docker buildx imagetools create --tag ${REGISTRY}/${IMAGE}:${REVISION} ${REGISTRY}/${IMAGE}:amd64-${REVISION} ${REGISTRY}/${IMAGE}:arm64-${REVISION}
 
-      - name: Lark Notification
-        continue-on-error: true
-        run: |
-          notiv3 "Blockchain Ethereum image pushed 🎉" ${REGISTRY}/${IMAGE}:${REVISION}
+  #     - name: Lark Notification
+  #       continue-on-error: true
+  #       run: |
+  #         notiv3 "Blockchain Ethereum image pushed 🎉" ${REGISTRY}/${IMAGE}:${REVISION}

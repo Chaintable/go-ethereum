@@ -138,6 +138,7 @@ func loadSnapshot(diskdb ethdb.KeyValueStore, triedb *triedb.Database, root comm
 		cache:  fastcache.New(cache * 1024 * 1024),
 		root:   baseRoot,
 	}
+	log.Info("Loading snapshot", "cache/M", cache)
 	snapshot, generator, err := loadAndParseJournal(diskdb, base)
 	if err != nil {
 		log.Warn("Failed to load journal", "error", err)

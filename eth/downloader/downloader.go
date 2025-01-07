@@ -191,6 +191,8 @@ type BlockChain interface {
 	// TrieDB retrieves the low level trie database used for interacting
 	// with trie nodes.
 	TrieDB() *triedb.Database
+
+	StopInsert() // Stop the chain from inserting new blocks
 }
 
 // New creates a new downloader to fetch hashes and blocks from remote peers.
@@ -605,8 +607,20 @@ func (d *Downloader) Terminate() {
 	}
 	d.quitLock.Unlock()
 
+	done := make(chan struct{})
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
 	// Cancel any pending download requests
-	d.Cancel()
+	go func() {
+		d.Cancel()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-timer.C:
+		d.blockchain.StopInsert()
+		d.Cancel()
+	}
 }
 
 // fetchBodies iteratively downloads the scheduled block bodies, taking any
@@ -728,6 +742,11 @@ func (d *Downloader) processHeaders(origin uint64) error {
 // processFullSyncContent takes fetch results from the queue and imports them into the chain.
 func (d *Downloader) processFullSyncContent() error {
 	for {
+		select {
+		case <-d.quitCh:
+			return errCancelContentProcessing
+		default:
+		}
 		results := d.queue.Results(true)
 		if len(results) == 0 {
 			return nil
