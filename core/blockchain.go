@@ -2492,6 +2492,72 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	}
 	bc.writeHeadBlock(head)
 
+	if tracer.NodeXPusher != nil && tracer.NodeXPusher.LastBlockNotice.NewBlocks[0].BlockNumber <= head.NumberU64() {
+		lastPushBlock := tracer.NodeXPusher.LastBlockNotice.NewBlocks[0]
+		_, dropBlocks, newBlocks := bc.getCommonAncestor(lastPushBlock, ptypes.BlockContext{
+			BlockNumber: head.NumberU64(),
+			Hash:        head.Hash(),
+			ParentHash:  head.ParentHash(),
+			Timestamp:   head.Time(),
+		})
+		var blockChange *ptypes.BlockChangeNotification
+		if len(dropBlocks) > 0 {
+			blockChange = &ptypes.BlockChangeNotification{
+				ChangeType: 2,
+				NewBlocks:  newBlocks,
+				DropBlocks: dropBlocks,
+			}
+		} else if len(newBlocks) > 0 {
+			// 1. 首先检查 newBlocks 是否满足我们想要的严格顺序和父子关系
+			valid := true
+			for i := 0; i < len(newBlocks)-1; i++ {
+				current := newBlocks[i]
+				next := newBlocks[i+1]
+
+				// 2. 检查区块高度是否递增
+				if current.BlockNumber+1 != next.BlockNumber {
+					log.Error("Blocks not in ascending order",
+						"currentIndex", i,
+						"currentBlockNumber", current.BlockNumber,
+						"nextBlockNumber", next.BlockNumber,
+					)
+					valid = false
+					break
+				}
+
+				// 3. 检查当前区块的哈希是否匹配下一个区块的父哈希
+				if current.Hash != next.ParentHash {
+					log.Error("Block hash does not match next block's parent hash",
+						"currentIndex", i,
+						"currentBlockHash", current.Hash,
+						"nextParentHash", next.ParentHash,
+					)
+					valid = false
+					break
+				}
+			}
+
+			if !valid {
+				log.Crit("New blocks not in strict order or parent-child relationship")
+			}
+
+			blockChange = &ptypes.BlockChangeNotification{
+				ChangeType: 1,
+				NewBlocks:  newBlocks,
+			}
+		}
+
+		err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange)
+		if err != nil {
+			log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
+		}
+		log.Info("NodeXPusher PushBlockChangeNotification", "blockChange", blockChange)
+
+		log.Debug("SetCanonical New BlockChangeNotification")
+	} else {
+		log.Debug("SetCanonical NodeXPusher is nil or LastBlockNotice.NewBlocks[0].BlockNumber <= block.NumberU64()")
+	}
+
 	// Emit events
 	logs := bc.collectLogs(head, false)
 	bc.chainFeed.Send(ChainEvent{Block: head, Hash: head.Hash(), Logs: logs})
