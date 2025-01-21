@@ -20,7 +20,6 @@ package core
 import (
 	"errors"
 	"fmt"
-	"github.com/Chaintable/pipeline/tracer"
 	"io"
 	"math/big"
 	"runtime"
@@ -29,6 +28,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Chaintable/pipeline/tracer"
 
 	ptypes "github.com/Chaintable/pipeline/types"
 	"github.com/ethereum/go-ethereum/common"
@@ -1620,6 +1621,7 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 	// 上一个push kafka的block, 必然存在(至少有genesis block)
 	// 上一个push kafka的block比当前的head block还要新，说明有unwind回退，不需要处理, 即使是fork，等有更新的block的时候再一起push
 	if tracer.NodeXPusher != nil && tracer.NodeXPusher.LastBlockNotice.NewBlocks[0].BlockNumber <= block.NumberU64() {
+		log.Info("Push block to kafka", "latest block", tracer.NodeXPusher.LastBlockNotice.NewBlocks[0].BlockNumber, "hash", tracer.NodeXPusher.LastBlockNotice.NewBlocks[0].Hash, "current block", block.NumberU64(), "hash", block.Hash())
 		lastPushBlock := tracer.NodeXPusher.LastBlockNotice.NewBlocks[0]
 		_, dropBlocks, newBlocks := bc.getCommonAncestor(lastPushBlock, ptypes.BlockContext{
 			BlockNumber: block.NumberU64(),
