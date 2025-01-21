@@ -1563,6 +1563,7 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 			}
 		}
 	}
+	log.Info("blockb", "blockb", blockb)
 	for blocka.Hash != blockb.Hash {
 		chainA = append(chainA, blocka)
 		headera := bc.GetHeaderByHash(blocka.ParentHash)
