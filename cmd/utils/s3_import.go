@@ -12,7 +12,6 @@ import (
 	"path"
 	"sync"
 	"syscall"
-	"time"
 
 	ptypes "github.com/Chaintable/pipeline/types"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -73,7 +72,7 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 		log.Error("Failed to create S3 client", "error", err)
 	}
 	go func() {
-		maxConcurrent := int64(50)
+		maxConcurrent := int64(100)
 		for start := header.Number.Int64() + 1; start <= endHeight; start += maxConcurrent {
 			if checkInterrupt() {
 				log.Info("Interrupted during import, stopping at %d", start)
@@ -150,7 +149,6 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 		if _, err := chain.InsertChain([]*types.Block{rawBlock}); err != nil {
 			return fmt.Errorf("invalid block %+v: %v", rawBlock.Header(), err)
 		}
-		log.Info("Imported block", "height", rawBlock.Number().Int64(), "root", rawBlock.Root().Hex())
 		parentHeader = rawBlock.Header()
 	}
 
@@ -225,7 +223,6 @@ type BlockImnport struct {
 }
 
 func ImportSingleFromS3(downloader *s3.Client, chain *core.BlockChain, blockHeightBucket string, blockBucket string, height int64) (*BlockImnport, error) {
-	start := time.Now()
 	blockHash, err := downloadHashFromS3(downloader, blockHeightBucket, chain.Config().ChainID.Int64(), int64(height))
 	if err != nil {
 		log.Error("Failed to download block hash from S3", "error", err)
@@ -277,7 +274,6 @@ func ImportSingleFromS3(downloader *s3.Client, chain *core.BlockChain, blockHeig
 	if err0 != nil || err1 != nil {
 		return nil, fmt.Errorf("failed to download block data: %w,%w", err0, err1)
 	}
-	log.Info("Downloaded block", "height", height, "hash", blockHash.Hex(), "duration", time.Since(start))
 
 	return &BlockImnport{
 		PreLoad:  &blockLoad,
