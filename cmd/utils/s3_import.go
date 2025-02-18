@@ -124,8 +124,11 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 			return errors.New("snapshot is not available")
 		}
 
+		wg := sync.WaitGroup{}
 		for _, accountLoad := range preLoad.AccountLoads {
+			wg.Add(1)
 			go func(account common.Address) {
+				defer wg.Done()
 				buff := crypto.NewKeccakState()
 				_, err := snap.Account(crypto.HashData(buff, account.Bytes()))
 				if err != nil {
@@ -136,7 +139,9 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 
 		for _, storageLoad := range preLoad.StorageLoads {
 			for _, key := range storageLoad.Keys {
+				wg.Add(1)
 				go func(account common.Address, key common.Hash) {
+					defer wg.Done()
 					buff := crypto.NewKeccakState()
 					_, err := snap.Storage(crypto.HashData(buff, account.Bytes()), crypto.HashData(buff, key.Bytes()))
 					if err != nil {
@@ -145,6 +150,7 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 				}(storageLoad.Address, key)
 			}
 		}
+		wg.Wait()
 
 		if _, err := chain.InsertChain([]*types.Block{rawBlock}); err != nil {
 			return fmt.Errorf("invalid block %+v: %v", rawBlock.Header(), err)
