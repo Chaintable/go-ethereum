@@ -957,6 +957,27 @@ Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.
 		Value:    metrics.DefaultConfig.InfluxDBOrganization,
 		Category: flags.MetricsCategory,
 	}
+
+	S3RegionFlag = &cli.StringFlag{
+		Name:     "s3.region",
+		Usage:    "AWS S3 region",
+		Value:    "ap-northeast-1",
+		Category: "s3",
+	}
+
+	S3HeightBucketFlag = &cli.StringFlag{
+		Name:     "s3.height-bucket",
+		Usage:    "AWS S3 bucket for height data",
+		Value:    "chaintable-pipeline-test",
+		Category: "s3",
+	}
+
+	S3BlockBucketFlag = &cli.StringFlag{
+		Name:     "s3.block-bucket",
+		Usage:    "AWS S3 bucket for block data",
+		Value:    "chaintable-nodex-pipeline-test",
+		Category: "s3",
+	}
 )
 
 var (

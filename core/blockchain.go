@@ -2660,3 +2660,7 @@ func (bc *BlockChain) SetTrieFlushInterval(interval time.Duration) {
 func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
 }
+
+func (bc *BlockChain) GetSnaps() *snapshot.Tree {
+	return bc.snaps
+}

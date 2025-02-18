@@ -218,6 +218,7 @@ func init() {
 		// See chaincmd.go:
 		initCommand,
 		importCommand,
+		importS3Command,
 		exportCommand,
 		importHistoryCommand,
 		exportHistoryCommand,

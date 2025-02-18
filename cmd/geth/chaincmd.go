@@ -110,6 +110,34 @@ with several RLP-encoded blocks, or several files can be used.
 If only one file is used, import error will result in failure. If several files are used,
 processing will proceed even if an individual RLP-file import failure occurs.`,
 	}
+	importS3Command = &cli.Command{
+		Action:    importChainFromS3,
+		Name:      "imports3",
+		Usage:     "Import from s3",
+		ArgsUsage: "<height>",
+		Flags: flags.Merge([]cli.Flag{
+			utils.CacheFlag,
+			utils.SyncModeFlag,
+			utils.GCModeFlag,
+			utils.SnapshotFlag,
+			utils.CacheDatabaseFlag,
+			utils.CacheGCFlag,
+			utils.TxLookupLimitFlag,
+			utils.VMTraceFlag,
+			utils.VMTraceJsonConfigFlag,
+			utils.TransactionHistoryFlag,
+			utils.StateHistoryFlag,
+			utils.S3BlockBucketFlag,
+			utils.S3HeightBucketFlag,
+			utils.S3RegionFlag,
+		}, utils.DatabaseFlags),
+		Description: `
+The import command imports blocks from an RLP-encoded form. The form can be one file
+with several RLP-encoded blocks, or several files can be used.
+
+If only one file is used, import error will result in failure. If several files are used,
+processing will proceed even if an individual RLP-file import failure occurs.`,
+	}
 	exportCommand = &cli.Command{
 		Action:    exportChain,
 		Name:      "export",
@@ -274,6 +302,37 @@ func dumpGenesis(ctx *cli.Context) error {
 	if err := json.NewEncoder(os.Stdout).Encode(*genesis); err != nil {
 		utils.Fatalf("could not encode stored genesis: %s", err)
 	}
+
+	return nil
+}
+
+func importChainFromS3(ctx *cli.Context) error {
+	if ctx.Args().Len() != 1 {
+		utils.Fatalf("This command requires an argument.")
+	}
+
+	stack, _ := makeConfigNode(ctx)
+	defer stack.Close()
+
+	chain, db := utils.MakeChain(ctx, stack, false)
+	defer db.Close()
+
+	height, err := strconv.ParseInt(ctx.Args().First(), 10, 64)
+	if err != nil {
+		utils.Fatalf("Invalid height: %v", err)
+	}
+
+	region := ctx.String(utils.S3RegionFlag.Name)
+	blockHeightBucket := ctx.String(utils.S3HeightBucketFlag.Name)
+	blockBucket := ctx.String(utils.S3BlockBucketFlag.Name)
+
+	start := time.Now()
+	if err := utils.ImportChainFromS3(chain, blockHeightBucket, blockBucket, height, region); err != nil {
+		utils.Fatalf("Import error: %v", err)
+	}
+
+	chain.Stop()
+	fmt.Printf("Import done in %v.\n\n", time.Since(start))
 
 	return nil
 }
