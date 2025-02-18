@@ -73,17 +73,38 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 		log.Error("Failed to create S3 client", "error", err)
 	}
 	go func() {
-		for start := header.Number.Int64() + 1; start <= endHeight; start++ {
+		maxConcurrent := int64(50)
+		for start := header.Number.Int64() + 1; start <= endHeight; start += maxConcurrent {
 			if checkInterrupt() {
 				log.Info("Interrupted during import, stopping at %d", start)
 				break
 			}
-			blockImport, err := ImportSingleFromS3(s3Client, chain, blockHeightBucket, blockBucket, start)
-			if err != nil {
-				log.Error("Failed to import block", "height", start, "error", err)
-				break
+			wg := sync.WaitGroup{}
+			out := make([]*BlockImnport, maxConcurrent)
+			taskNum := int(maxConcurrent)
+			if start+maxConcurrent > endHeight {
+				taskNum = int(endHeight - start + 1)
 			}
-			importCh <- blockImport
+			for i := 0; i < taskNum; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					blockImport, err := ImportSingleFromS3(s3Client, chain, blockHeightBucket, blockBucket, start+int64(i))
+					if err != nil {
+						log.Error("Failed to import block", "height", start+int64(i), "error", err)
+						return
+					}
+					out[i] = blockImport
+				}(i)
+			}
+			wg.Wait()
+			for i := 0; i < taskNum; i++ {
+				if out[i] == nil {
+					log.Error("Failed to import block", "height", start+int64(i), "error", "blockImport is nil")
+					return
+				}
+				importCh <- out[i]
+			}
 		}
 		close(importCh)
 	}()
@@ -134,6 +155,9 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 	}
 
 	return nil
+
+}
+func ConcurrentFormS3(chain *core.BlockChain, blockHeightBucket string, blockBucket string, startHeight int64, endHeight int64, region string, importCh chan *BlockImnport) {
 
 }
 
