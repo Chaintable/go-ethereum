@@ -71,7 +71,7 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 		log.Error("Failed to create S3 client", "error", err)
 	}
 	go func() {
-		for start := header.Number.Int64(); start <= endHeight; start++ {
+		for start := header.Number.Int64() + 1; start <= endHeight; start++ {
 			if checkInterrupt() {
 				log.Info("Interrupted during import, stopping at %d", start)
 				break
