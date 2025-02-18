@@ -99,7 +99,7 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 
 		snap := chain.GetSnaps().Snapshot(parentHeader.Root)
 		if snap == nil {
-			log.Error("Failed to get snapshot", "root", parentHeader.Root)
+			log.Error("Failed to get snapshot", "root", parentHeader.Root.Hex())
 			return errors.New("snapshot is not available")
 		}
 
@@ -128,6 +128,7 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 		if _, err := chain.InsertChain([]*types.Block{rawBlock}); err != nil {
 			return fmt.Errorf("invalid block %+v: %v", rawBlock.Header(), err)
 		}
+		log.Info("Imported block", "height", rawBlock.Number().Int64(), "root", rawBlock.Root().Hex())
 	}
 
 	return nil
