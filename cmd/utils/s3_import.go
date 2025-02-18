@@ -208,7 +208,7 @@ func ImportSingleFromS3(downloader *s3.Client, chain *core.BlockChain, blockHeig
 	var blockLoad ptypes.BlockLoad
 	blockLoadBytes, err := downloadFileFromS3(downloader, blockBucket, blockLoads3Key)
 	if err != nil {
-		log.Error("Failed to download block load from S3", "error", err)
+		log.Error("Failed to download block load from S3", "blockLoads3Key", blockLoads3Key, "error", err)
 		return nil, err
 	}
 	err = DecodeFromGzipJson(blockLoadBytes, &blockLoad)
