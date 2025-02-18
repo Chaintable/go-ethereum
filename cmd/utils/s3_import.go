@@ -81,7 +81,6 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 				log.Error("Failed to import block", "height", start, "error", err)
 				break
 			}
-			log.Info("Imported block", "height", start)
 			importCh <- blockImport
 		}
 		close(importCh)
@@ -129,6 +128,7 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 			return fmt.Errorf("invalid block %+v: %v", rawBlock.Header(), err)
 		}
 		log.Info("Imported block", "height", rawBlock.Number().Int64(), "root", rawBlock.Root().Hex())
+		parentHeader = rawBlock.Header()
 	}
 
 	return nil
