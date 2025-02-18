@@ -307,6 +307,7 @@ func dumpGenesis(ctx *cli.Context) error {
 }
 
 func importChainFromS3(ctx *cli.Context) error {
+	fmt.Printf("ctx.Args().First(): %v\n", ctx.Args().First())
 	if ctx.Args().Len() != 1 {
 		utils.Fatalf("This command requires an argument.")
 	}
