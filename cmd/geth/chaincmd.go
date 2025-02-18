@@ -311,8 +311,7 @@ func importChainFromS3(ctx *cli.Context) error {
 		utils.Fatalf("This command requires an argument.")
 	}
 
-	stack, cfg := makeConfigNode(ctx)
-	log.Info("Configuring S3 import", "config", cfg)
+	stack, _ := makeConfigNode(ctx)
 	defer stack.Close()
 
 	chain, db := utils.MakeChain(ctx, stack, false)

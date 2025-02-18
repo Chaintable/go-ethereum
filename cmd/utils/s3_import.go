@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"sync"
 	"syscall"
 
 	ptypes "github.com/Chaintable/pipeline/types"
@@ -205,30 +206,49 @@ func ImportSingleFromS3(downloader *s3.Client, chain *core.BlockChain, blockHeig
 		return nil, err
 	}
 
-	blockLoads3Key := fmt.Sprintf("%d/%s/stateLoad", chain.Config().ChainID.Int64(), blockHash.Hex())
+	wg := sync.WaitGroup{}
 	var blockLoad ptypes.BlockLoad
-	blockLoadBytes, err := downloadFileFromS3(downloader, blockBucket, blockLoads3Key)
-	if err != nil {
-		log.Error("Failed to download block load from S3", "blockLoads3Key", blockLoads3Key, "error", err)
-		return nil, err
-	}
-	err = DecodeFromGzipJson(blockLoadBytes, &blockLoad)
-	if err != nil {
-		log.Error("Failed to decode block load from S3", "error", err)
-		return nil, err
-	}
+	wg.Add(1)
+	var err0 error
+	go func() {
+		defer wg.Done()
+		blockLoads3Key := fmt.Sprintf("%d/%s/stateLoad", chain.Config().ChainID.Int64(), blockHash.Hex())
+		blockLoadBytes, err := downloadFileFromS3(downloader, blockBucket, blockLoads3Key)
+		if err != nil {
+			log.Error("Failed to download block load from S3", "blockLoads3Key", blockLoads3Key, "error", err)
+			err0 = err
+			return
+		}
+		err = DecodeFromGzipJson(blockLoadBytes, &blockLoad)
+		if err != nil {
+			log.Error("Failed to decode block load from S3", "error", err)
+			err0 = err
+			return
+		}
+	}()
 
-	blockRaws3Key := fmt.Sprintf("%d/%s/rawBlock", chain.Config().ChainID.Int64(), blockHash.Hex())
 	rawBlock := new(types.Block)
-	rawBlockBytes, err := downloadFileFromS3(downloader, blockBucket, blockRaws3Key)
-	if err != nil {
-		log.Error("Failed to download raw block from S3", "error", err)
-		return nil, err
-	}
-	err = DecodeFromRlp(rawBlockBytes, rawBlock)
-	if err != nil {
-		log.Error("Failed to decode raw block from S3", "error", err)
-		return nil, err
+	wg.Add(1)
+	var err1 error
+	go func() {
+		defer wg.Done()
+		blockRaws3Key := fmt.Sprintf("%d/%s/rawBlock", chain.Config().ChainID.Int64(), blockHash.Hex())
+		rawBlockBytes, err := downloadFileFromS3(downloader, blockBucket, blockRaws3Key)
+		if err != nil {
+			log.Error("Failed to download raw block from S3", "error", err)
+			err1 = err
+			return
+		}
+		err = DecodeFromRlp(rawBlockBytes, rawBlock)
+		if err != nil {
+			log.Error("Failed to decode raw block from S3", "error", err)
+			err1 = err
+			return
+		}
+	}()
+
+	if err0 != nil || err1 != nil {
+		return nil, fmt.Errorf("failed to download block data: %w,%w", err0, err1)
 	}
 
 	return &BlockImnport{
