@@ -12,6 +12,7 @@ import (
 	"path"
 	"sync"
 	"syscall"
+	"time"
 
 	ptypes "github.com/Chaintable/pipeline/types"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -125,7 +126,10 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 		}
 
 		wg := sync.WaitGroup{}
+		preloadStart := time.Now()
+		preloadNum := 0
 		for _, accountLoad := range preLoad.AccountLoads {
+			preloadNum++
 			wg.Add(1)
 			go func(account common.Address) {
 				defer wg.Done()
@@ -139,6 +143,7 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 
 		for _, storageLoad := range preLoad.StorageLoads {
 			for _, key := range storageLoad.Keys {
+				preloadNum++
 				wg.Add(1)
 				go func(account common.Address, key common.Hash) {
 					defer wg.Done()
@@ -151,6 +156,7 @@ func ImportChainFromS3(chain *core.BlockChain, blockHeightBucket string, blockBu
 			}
 		}
 		wg.Wait()
+		log.Info("Preload", "time", time.Since(preloadStart), "num", preloadNum)
 
 		if _, err := chain.InsertChain([]*types.Block{rawBlock}); err != nil {
 			return fmt.Errorf("invalid block %+v: %v", rawBlock.Header(), err)
