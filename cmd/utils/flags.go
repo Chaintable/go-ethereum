@@ -415,12 +415,6 @@ var (
 		Value:    ethconfig.Defaults.BlobPool.PriceBump,
 		Category: flags.BlobPoolCategory,
 	}
-	GoGCFlag = &cli.Float64Flag{
-		Name:     "gogc",
-		Usage:    "Percent of heap to keep free for Go garbage collector",
-		Value:    20.0,
-		Category: flags.PerfCategory,
-	}
 	// Performance tuning settings
 	CacheFlag = &cli.IntFlag{
 		Name:     "cache",
@@ -1691,13 +1685,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 			ctx.Set(CacheFlag.Name, strconv.Itoa(allowance))
 		}
 	}
-	gogcMax := ctx.Float64(GoGCFlag.Name)
-	if gogcMax == 0 {
-		gogcMax = 20.0
-	}
 	// Ensure Go's GC ignores the database cache for trigger percentage
 	cache := ctx.Int(CacheFlag.Name)
-	gogc := math.Max(gogcMax, math.Min(100, 100/(float64(cache)/1024)))
+	gogc := math.Max(20, math.Min(100, 100/(float64(cache)/1024)))
 
 	log.Debug("Sanitizing Go's GC trigger", "percent", int(gogc))
 	godebug.SetGCPercent(int(gogc))
