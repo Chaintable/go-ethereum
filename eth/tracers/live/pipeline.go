@@ -26,7 +26,6 @@ func NewPipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		OnBlockchainInit: t.OnBlockchainInit,
 		OnClose:          t.OnClose,
 		OnBlockStart:     t.OnBlockStart,
-		OnBlockEnd:       t.OnBlockEnd,
 		OnTxStart:        t.OnTxStart,
 		OnTxEnd:          t.OnTxEnd,
 		OnEnter:          t.OnEnter,

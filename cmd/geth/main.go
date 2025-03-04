@@ -99,7 +99,6 @@ var (
 		utils.EthRequiredBlocksFlag,
 		utils.LegacyWhitelistFlag, // deprecated
 		utils.BloomFilterSizeFlag,
-		utils.GoGCFlag,
 		utils.CacheFlag,
 		utils.CacheDatabaseFlag,
 		utils.CacheTrieFlag,

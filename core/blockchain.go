@@ -1628,17 +1628,32 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 			ParentHash:  block.ParentHash(),
 			Timestamp:   block.Time(),
 		})
+		var blockChange *ptypes.BlockChangeNotification
 		if len(dropBlocks) > 0 {
-			tracer.BlockCtx.BlockChange = &ptypes.BlockChangeNotification{
+			blockChange = &ptypes.BlockChangeNotification{
 				ChangeType: 2,
 				NewBlocks:  newBlocks,
 				DropBlocks: dropBlocks,
 			}
 		} else if len(newBlocks) > 0 {
-			tracer.BlockCtx.BlockChange = &ptypes.BlockChangeNotification{
+			blockChange = &ptypes.BlockChangeNotification{
 				ChangeType: 1,
 				NewBlocks:  newBlocks,
 			}
+		}
+
+		parent := bc.GetHeaderByHash(block.Header().ParentHash)
+
+		if parent.Root == block.Root() {
+			bc.logger.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
+		}
+
+		if blockChange != nil {
+			err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange)
+			if err != nil {
+				log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
+			}
+			log.Info("NodeXPusher PushBlockChangeNotification", "blockChange", blockChange)
 		}
 	}
 
@@ -2513,15 +2528,20 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 			}
 		}
 
-		err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange)
-		if err != nil {
-			log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
-		}
-		log.Info("NodeXPusher PushBlockChangeNotification", "blockChange", blockChange)
+		parent := bc.GetHeaderByHash(head.Header().ParentHash)
 
-		log.Debug("SetCanonical New BlockChangeNotification")
-	} else {
-		log.Debug("SetCanonical NodeXPusher is nil or LastBlockNotice.NewBlocks[0].BlockNumber <= block.NumberU64()")
+		if parent.Root == head.Root() {
+			log.Warn("SetCanonical parent.Root == head.Root", "parent.Root", parent.Root, "head.Root", head.Root())
+			bc.logger.OnCommit(parent.Root, head.Root(), nil, nil, nil, nil, nil, nil)
+		}
+
+		if blockChange != nil {
+			err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange)
+			if err != nil {
+				log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
+			}
+			log.Info("NodeXPusher PushBlockChangeNotification", "blockChange", blockChange)
+		}
 	}
 
 	// Emit events
@@ -2659,4 +2679,8 @@ func (bc *BlockChain) SetTrieFlushInterval(interval time.Duration) {
 // GetTrieFlushInterval gets the in-memory tries flushAlloc interval
 func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
+}
+
+func (bc *BlockChain) GetSnaps() *snapshot.Tree {
+	return bc.snaps
 }
