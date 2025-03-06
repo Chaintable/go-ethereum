@@ -124,6 +124,7 @@ func ApplyTransactionWithEVM(msg *Message, config *params.ChainConfig, gp *GasPo
 		evm.Config.Tracer.OnTxStart(evm.GetVMContext(), tx, msg.From)
 		if evm.Config.Tracer.OnTxEnd != nil {
 			defer func() {
+				receipt.SetEffectiveGasPrice(tx, evm.Context.BaseFee)
 				evm.Config.Tracer.OnTxEnd(receipt, err)
 			}()
 		}
