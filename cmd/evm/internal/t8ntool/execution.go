@@ -312,6 +312,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 			receipt.TransactionIndex = uint(txIndex)
 			receipts = append(receipts, receipt)
 			if evm.Config.Tracer != nil && evm.Config.Tracer.OnTxEnd != nil {
+				receipt.SetEffectiveGasPrice(tx, evm.Context.BaseFee)
 				evm.Config.Tracer.OnTxEnd(receipt, nil)
 			}
 		}
