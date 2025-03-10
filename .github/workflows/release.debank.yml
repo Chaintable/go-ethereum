@@ -1,9 +1,9 @@
-name: "Build new artifacts"
+name: "Release artifacts"
 
 on:
-  pull_request:
-    branches:
-      - "debank"
+  release:
+    types:
+      - created
   workflow_dispatch:
 
 env:
@@ -12,7 +12,7 @@ env:
   DOCKERFILE: Dockerfile.debank
 
 jobs:
-  build-artifacts:
+  build-and-package:
     strategy:
       matrix:
         arch: [amd64]
@@ -31,12 +31,12 @@ jobs:
 
       - name: Set env
         run: |
-          echo "REVISION=$(git rev-parse --short=8 HEAD)" >> $GITHUB_ENV
+          echo "REVISION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
+        
       - name: Build image and push to ECR
         uses:  docker/build-push-action@v5
         with:
@@ -47,10 +47,14 @@ jobs:
           build-args: ACCESS_TOKEN=${{ steps.generate-token.outputs.token }}
           provenance: false
 
+      - name: Lark Notification
+        continue-on-error: true
+        run: |
+          notiv3 "Blockchain client Erigon's image pushed 🎉" ${REGISTRY}/${IMAGE}:${REVISION}
 
   # merge-docker-manifest:
   #   runs-on: [self-hosted, ops]
-  #   needs: build-artifacts
+  #   needs: build-and-package
   #   steps:
   #     - name: Checkout code
   #       uses: actions/checkout@v2
@@ -59,15 +63,13 @@ jobs:
 
   #     - name: Set env
   #       run: |
-  #         echo "REVISION=$(git rev-parse --short=8 HEAD)" >> $GITHUB_ENV
-
+  #         echo "REVISION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
   #     - name: Merge manifest
   #       run: |
   #         docker pull --platform=linux/amd64 ${REGISTRY}/${IMAGE}:amd64-${REVISION}
   #         docker pull --platform=linux/arm64 ${REGISTRY}/${IMAGE}:arm64-${REVISION}
   #         docker buildx imagetools create --tag ${REGISTRY}/${IMAGE}:${REVISION} ${REGISTRY}/${IMAGE}:amd64-${REVISION} ${REGISTRY}/${IMAGE}:arm64-${REVISION}
-
   #     - name: Lark Notification
   #       continue-on-error: true
   #       run: |
-  #         notiv3 "Blockchain Ethereum image pushed 🎉" ${REGISTRY}/${IMAGE}:${REVISION}
+  #         notiv3 "Blockchain erigon image pushed 🎉" ${REGISTRY}/${IMAGE}:${REVISION}
