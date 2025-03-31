@@ -544,7 +544,7 @@ func (b testBackend) GetEVM(ctx context.Context, msg *core.Message, state vm.Sta
 	if blockContext != nil {
 		context = *blockContext
 	}
-	return vm.NewEVM(context, txContext, state, b.chain.Config(), *vmConfig)
+	return vm.NewEVM(context, txContext, state, b.chain.Config(), *vmConfig, nil)
 }
 func (b testBackend) SubscribeChainEvent(ch chan<- core.ChainEvent) event.Subscription {
 	panic("implement me")
@@ -595,6 +595,7 @@ func (b testBackend) BloomStatus() (uint64, uint64) { panic("implement me") }
 func (b testBackend) ServiceFilter(ctx context.Context, session *bloombits.MatcherSession) {
 	panic("implement me")
 }
+func (b testBackend) GetCustomPrecompiles() map[common.Address]vm.PrecompiledContract { return nil }
 
 func TestEstimateGas(t *testing.T) {
 	t.Parallel()
