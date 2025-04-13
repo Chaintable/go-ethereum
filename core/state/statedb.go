@@ -138,6 +138,8 @@ type StateDB struct {
 	// State witness if cross validation is needed
 	witness *stateless.Witness
 
+	onCommit tracing.CommitHook
+
 	// Measurements gathered during execution for debugging purposes
 	AccountReads    time.Duration
 	AccountHashes   time.Duration
@@ -1259,6 +1261,10 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool) (*stateU
 	return newStateUpdate(noStorageWiping, origin, root, deletes, updates, nodes), nil
 }
 
+func (s *StateDB) SetOnCommit(onCommit tracing.CommitHook) {
+	s.onCommit = onCommit
+}
+
 // commitAndFlush is a wrapper of commit which also commits the state mutations
 // to the configured data stores.
 func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool, noStorageWiping bool) (*stateUpdate, error) {
@@ -1291,6 +1297,31 @@ func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool, noStorag
 				log.Warn("Failed to cap snapshot tree", "root", ret.root, "layers", TriesInMemory, "err", err)
 			}
 			s.SnapshotCommits += time.Since(start)
+		}
+		if s.onCommit != nil {
+			contracts := make(map[common.Hash][]byte)
+			for _, code := range ret.codes {
+				contracts[code.hash] = code.blob
+			}
+			destructs := make(map[common.Hash]struct{})
+			accounts := make(map[common.Hash][]byte)
+			for addr, v := range ret.accounts {
+				if v == nil {
+					destructs[addr] = struct{}{}
+				} else {
+					accounts[addr] = v
+				}
+			}
+			s.onCommit(
+				ret.originRoot,
+				ret.root,
+				destructs,
+				accounts,
+				ret.accountsOrigin,
+				ret.storages,
+				ret.storagesOrigin,
+				contracts,
+			)
 		}
 		// If trie database is enabled, commit the state update as a new layer
 		if db := s.db.TrieDB(); db != nil {
