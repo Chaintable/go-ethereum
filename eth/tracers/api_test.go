@@ -184,7 +184,17 @@ func (b *testBackend) StateAtTransaction(ctx context.Context, block *types.Block
 	return nil, vm.BlockContext{}, nil, nil, fmt.Errorf("transaction index %d out of range for block %#x", txIndex, block.Hash())
 }
 
-func (b *testBackend) GetCustomPrecompiles() map[common.Address]vm.PrecompiledContract { return nil }
+func (b *testBackend) GetCustomPrecompiles(int64) map[common.Address]vm.PrecompiledContract {
+	return nil
+}
+
+func (b *testBackend) PrepareTx(statedb vm.StateDB, tx *types.Transaction) error {
+	return nil
+}
+
+func (b *testBackend) GetBlockContext(ctx context.Context, block *types.Block, statedb vm.StateDB, backend ethapi.ChainContextBackend) (vm.BlockContext, error) {
+	return core.NewEVMBlockContext(block.Header(), ethapi.NewChainContext(ctx, backend), nil), nil
+}
 
 func TestTraceCall(t *testing.T) {
 	t.Parallel()

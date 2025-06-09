@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/lib/ethapi"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -259,7 +260,7 @@ func (b *EthAPIBackend) GetEVM(ctx context.Context, msg *core.Message, state vm.
 	} else {
 		context = core.NewEVMBlockContext(header, b.eth.BlockChain(), nil)
 	}
-	return vm.NewEVM(context, txContext, state, b.eth.blockchain.Config(), *vmConfig, b.GetCustomPrecompiles())
+	return vm.NewEVM(context, txContext, state, b.eth.blockchain.Config(), *vmConfig, b.GetCustomPrecompiles(header.Number.Int64()))
 }
 
 func (b *EthAPIBackend) SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEvent) event.Subscription {
@@ -415,4 +416,14 @@ func (b *EthAPIBackend) StateAtTransaction(ctx context.Context, block *types.Blo
 	return b.eth.stateAtTransaction(ctx, block, txIndex, reexec)
 }
 
-func (b *EthAPIBackend) GetCustomPrecompiles() map[common.Address]vm.PrecompiledContract { return nil }
+func (b *EthAPIBackend) GetCustomPrecompiles(int64) map[common.Address]vm.PrecompiledContract {
+	return nil
+}
+
+func (b *EthAPIBackend) PrepareTx(statedb vm.StateDB, tx *types.Transaction) error {
+	return nil
+}
+
+func (b *EthAPIBackend) GetBlockContext(ctx context.Context, block *types.Block, statedb vm.StateDB, backend ethapi.ChainContextBackend) (vm.BlockContext, error) {
+	return core.NewEVMBlockContext(block.Header(), ethapi.NewChainContext(ctx, backend), nil), nil
+}

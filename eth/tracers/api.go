@@ -89,7 +89,9 @@ type Backend interface {
 	ChainDb() ethdb.Database
 	StateAtBlock(ctx context.Context, block *types.Block, reexec uint64, base vm.StateDB, readOnly bool, preferDisk bool) (vm.StateDB, StateReleaseFunc, error)
 	StateAtTransaction(ctx context.Context, block *types.Block, txIndex int, reexec uint64) (*types.Transaction, vm.BlockContext, vm.StateDB, StateReleaseFunc, error)
-	GetCustomPrecompiles() map[common.Address]vm.PrecompiledContract
+	GetCustomPrecompiles(int64) map[common.Address]vm.PrecompiledContract
+	PrepareTx(statedb vm.StateDB, tx *types.Transaction) error
+	GetBlockContext(ctx context.Context, block *types.Block, statedb vm.StateDB, backend ethapi.ChainContextBackend) (vm.BlockContext, error)
 }
 
 // API is the collection of tracing APIs exposed over the private debugging endpoint.
@@ -534,7 +536,7 @@ func (api *API) IntermediateRoots(ctx context.Context, hash common.Hash, config 
 		var (
 			msg, _    = core.TransactionToMessage(tx, signer, block.BaseFee())
 			txContext = core.NewEVMTxContext(msg)
-			vmenv     = vm.NewEVM(vmctx, txContext, statedb, chainConfig, vm.Config{}, api.backend.GetCustomPrecompiles())
+			vmenv     = vm.NewEVM(vmctx, txContext, statedb, chainConfig, vm.Config{}, api.backend.GetCustomPrecompiles(block.Number().Int64()))
 		)
 		statedb.SetTxContext(tx.Hash(), i)
 		if _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit)); err != nil {
@@ -596,10 +598,13 @@ func (api *API) traceBlock(ctx context.Context, block *types.Block, config *Trac
 		}
 	}
 	// Native tracers have low overhead
+	blockCtx, err := api.backend.GetBlockContext(ctx, block, statedb, api.backend)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get block context: %w", err)
+	}
 	var (
 		txs       = block.Transactions()
 		blockHash = block.Hash()
-		blockCtx  = core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
 		signer    = types.MakeSigner(api.backend.ChainConfig(), block.Number(), block.Time())
 		results   = make([]*TxTraceResult, len(txs))
 	)
@@ -656,7 +661,11 @@ func (api *API) traceBlockParallel(ctx context.Context, block *types.Block, stat
 				// as the GetHash function of BlockContext is not safe for
 				// concurrent use.
 				// See: https://github.com/ethereum/go-ethereum/issues/29114
-				blockCtx := core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
+				blockCtx, err := api.backend.GetBlockContext(ctx, block, statedb, api.backend)
+				if err != nil {
+					results[task.index] = &TxTraceResult{TxHash: txs[task.index].Hash(), Error: err.Error()}
+					continue
+				}
 				res, err := api.traceTx(ctx, txs[task.index], msg, txctx, blockCtx, task.statedb, config)
 				if err != nil {
 					results[task.index] = &TxTraceResult{TxHash: txs[task.index].Hash(), Error: err.Error()}
@@ -669,7 +678,10 @@ func (api *API) traceBlockParallel(ctx context.Context, block *types.Block, stat
 
 	// Feed the transactions into the tracers and return
 	var failed error
-	blockCtx := core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
+	blockCtx, err := api.backend.GetBlockContext(ctx, block, statedb, api.backend)
+	if err != nil {
+		return nil, err
+	}
 txloop:
 	for i, tx := range txs {
 		// Send the trace task over for execution
@@ -684,7 +696,7 @@ txloop:
 		// Generate the next state snapshot fast without tracing
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
 		statedb.SetTxContext(tx.Hash(), i)
-		vmenv := vm.NewEVM(blockCtx, core.NewEVMTxContext(msg), statedb, api.backend.ChainConfig(), vm.Config{}, api.backend.GetCustomPrecompiles())
+		vmenv := vm.NewEVM(blockCtx, core.NewEVMTxContext(msg), statedb, api.backend.ChainConfig(), vm.Config{}, api.backend.GetCustomPrecompiles(block.Number().Int64()))
 		if _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit)); err != nil {
 			failed = err
 			break txloop
@@ -743,11 +755,14 @@ func (api *API) standardTraceBlockToFile(ctx context.Context, block *types.Block
 	logConfig.Debug = true
 
 	// Execute transaction, either tracing all or just the requested one
+	vmctx, err := api.backend.GetBlockContext(ctx, block, statedb, api.backend)
+	if err != nil {
+		return nil, err
+	}
 	var (
 		dumps       []string
 		signer      = types.MakeSigner(api.backend.ChainConfig(), block.Number(), block.Time())
 		chainConfig = api.backend.ChainConfig()
-		vmctx       = core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
 		canon       = true
 	)
 	// Check if there are any overrides: the caller may wish to enable a future
@@ -790,7 +805,7 @@ func (api *API) standardTraceBlockToFile(ctx context.Context, block *types.Block
 			}
 		}
 		// Execute the transaction and flush any traces to disk
-		vmenv := vm.NewEVM(vmctx, txContext, statedb, chainConfig, vmConf, api.backend.GetCustomPrecompiles())
+		vmenv := vm.NewEVM(vmctx, txContext, statedb, chainConfig, vmConf, api.backend.GetCustomPrecompiles(block.Number().Int64()))
 		statedb.SetTxContext(tx.Hash(), i)
 		vmConf.Tracer.OnTxStart(vmenv.GetVMContext(), tx, msg.From)
 		vmRet, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit))
@@ -931,7 +946,10 @@ func (api *API) TraceCall(ctx context.Context, args ethapi.TransactionArgs, bloc
 	}
 	defer release()
 
-	vmctx := core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
+	vmctx, err := api.backend.GetBlockContext(ctx, block, statedb, api.backend)
+	if err != nil {
+		return nil, err
+	}
 	// Apply the customization rules if required.
 	if config != nil {
 		if err := config.StateOverrides.Apply(statedb); err != nil {
@@ -988,7 +1006,7 @@ func (api *API) traceTx(ctx context.Context, tx *types.Transaction, message *cor
 			return nil, err
 		}
 	}
-	vmenv := vm.NewEVM(vmctx, vm.TxContext{GasPrice: big.NewInt(0)}, statedb, api.backend.ChainConfig(), vm.Config{Tracer: tracer.Hooks, NoBaseFee: true}, api.backend.GetCustomPrecompiles())
+	vmenv := vm.NewEVM(vmctx, vm.TxContext{GasPrice: big.NewInt(0)}, statedb, api.backend.ChainConfig(), vm.Config{Tracer: tracer.Hooks, NoBaseFee: true}, api.backend.GetCustomPrecompiles(vmctx.BlockNumber.Int64()))
 	statedb.SetLogger(tracer.Hooks)
 
 	// Define a meaningful timeout of a single transaction trace
@@ -1010,6 +1028,9 @@ func (api *API) traceTx(ctx context.Context, tx *types.Transaction, message *cor
 
 	// Call Prepare to clear out the statedb access list
 	statedb.SetTxContext(txctx.TxHash, txctx.TxIndex)
+	if err := api.backend.PrepareTx(statedb, tx); err != nil {
+		return nil, err
+	}
 	_, err = core.ApplyTransactionWithEVM(message, api.backend.ChainConfig(), new(core.GasPool).AddGas(message.GasLimit), statedb, vmctx.BlockNumber, txctx.BlockHash, tx, &usedGas, vmenv)
 	if err != nil {
 		// Due to how our mempool works, a transaction with insufficient funds can be included in a block. For tracing purposes, we should ignore this.
