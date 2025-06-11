@@ -23,18 +23,16 @@ func NewPipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		return nil, err
 	}
 	return &tracing.Hooks{
-		OnBlockchainInit:    t.OnBlockchainInit,
-		OnClose:             t.OnClose,
-		OnBlockStart:        t.OnBlockStart,
-		OnTxStart:           t.OnTxStart,
-		OnTxEnd:             t.OnTxEnd,
-		OnEnter:             t.OnEnter,
-		OnExit:              t.OnExit,
-		OnLog:               t.OnLog,
-		OnOpcode:            t.OnOpcode,
-		OnGenesisBlock:      t.OnGenesisBlock,
-		OnCommit:            t.OnCommit,
-		OnSystemCallStartV2: t.OnSystemCallStartHookV2,
-		OnBalanceChange:     t.OnBalance,
+		OnBlockchainInit: t.OnBlockchainInit,
+		OnClose:          t.OnClose,
+		OnBlockStart:     t.OnBlockStart,
+		OnTxStart:        t.OnTxStart,
+		OnTxEnd:          t.OnTxEnd,
+		OnEnter:          t.OnEnter,
+		OnExit:           t.OnExit,
+		OnLog:            t.OnLog,
+		OnOpcode:         t.OnOpcode,
+		OnGenesisBlock:   t.OnGenesisBlock,
+		OnCommit:         t.OnCommit,
 	}, nil
 }
