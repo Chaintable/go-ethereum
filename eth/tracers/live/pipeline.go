@@ -35,5 +35,6 @@ func NewPipelineTracer(cfg json.RawMessage) (*tracing.Hooks, error) {
 		OnGenesisBlock:      t.OnGenesisBlock,
 		OnCommit:            t.OnCommit,
 		OnSystemCallStartV2: t.OnSystemCallStartHookV2,
+		OnBalanceChange:     t.OnBalance,
 	}, nil
 }
