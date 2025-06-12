@@ -2054,6 +2054,9 @@ func (bc *BlockChain) processBlock(block *types.Block, statedb *state.StateDB, s
 			Safe:      bc.CurrentSafeBlock(),
 		})
 	}
+	if bc.logger != nil && bc.logger.OnBlockDBStart != nil {
+		bc.logger.OnBlockDBStart(statedb)
+	}
 	if bc.logger != nil && bc.logger.OnBlockEnd != nil {
 		defer func() {
 			bc.logger.OnBlockEnd(blockEndErr)

@@ -188,6 +188,8 @@ type (
 
 	// CommitHook is called when the state is committed.
 	CommitHook = func(originRoot common.Hash, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, accountsOrigin map[common.Address][]byte, storages map[common.Hash]map[common.Hash][]byte, storagesOrigin map[common.Address]map[common.Hash][]byte, codes map[common.Hash][]byte)
+
+	BlockDBStartHook = func(StateDB)
 )
 
 type Hooks struct {
@@ -220,7 +222,8 @@ type Hooks struct {
 	OnBlockHashRead BlockHashReadHook
 
 	// custom hook
-	OnCommit CommitHook
+	OnCommit       CommitHook
+	OnBlockDBStart BlockDBStartHook
 }
 
 // BalanceChangeReason is used to indicate the reason for a balance change, useful
