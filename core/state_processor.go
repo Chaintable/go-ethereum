@@ -21,13 +21,16 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/Chaintable/pipeline/tracer"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -76,9 +79,26 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		vmenv   = vm.NewEVM(context, vm.TxContext{}, statedb, p.config, cfg)
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
+	// Iterate over and process the individual transactions
+	var pipelineTracer *tracer.PipelineTracer
+	if p, ok := cfg.PipelineTracer.(*tracer.PipelineTracer); !ok {
+		log.Crit("vmConfig.Tracer must be a pipeline.Tracer")
+	} else {
+		pipelineTracer = p
+	}
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, vmenv, statedb)
 	}
+	statedb.SetHooks(&tracing.Hooks{
+		OnBlockchainInit: pipelineTracer.OnBlockchainInit,
+		OnClose:          pipelineTracer.OnClose,
+		OnBlockStart:     pipelineTracer.OnBlockStart,
+		OnTxStart:        pipelineTracer.OnTxStart,
+		OnTxEnd:          pipelineTracer.OnTxEnd,
+		OnLog:            pipelineTracer.OnLog,
+		OnGenesisBlock:   pipelineTracer.OnGenesisBlock,
+		OnCommit:         pipelineTracer.OnCommit,
+	})
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
@@ -86,7 +106,14 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
 		statedb.SetTxContext(tx.Hash(), i)
+		if pipelineTracer != nil {
+			pipelineTracer.OnTxStart(tx, msg.From)
+		}
 		receipt, err := applyTransaction(msg, p.config, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv)
+		if pipelineTracer != nil {
+			receipt.SetEffectiveGasPrice(tx, vmenv.Context.BaseFee)
+			pipelineTracer.OnTxEnd(receipt, err)
+		}
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}

@@ -375,3 +375,7 @@ func (rs Receipts) DeriveFields(config *params.ChainConfig, hash common.Hash, nu
 	}
 	return nil
 }
+
+func (r *Receipt) SetEffectiveGasPrice(tx *Transaction, baseFee *big.Int) {
+	r.EffectiveGasPrice = tx.inner.effectiveGasPrice(new(big.Int), baseFee)
+}
