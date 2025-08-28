@@ -1553,6 +1553,7 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 			parent := bc.GetHeaderByHash(block.Header().ParentHash)
 
 			if parent.Root == block.Root() {
+				log.Info("writeBlockAndSetHead", "blockChange", blockChange)
 				bc.hooks.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
 			}
 
@@ -2430,6 +2431,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 		parent := bc.GetHeaderByHash(head.Header().ParentHash)
 
 		if parent.Root == head.Root() {
+			log.Info("SetCanonical", "blocchange", blockChange)
 			bc.hooks.OnCommit(parent.Root, head.Root(), nil, nil, nil, nil, nil, nil)
 		}
 
