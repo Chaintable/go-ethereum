@@ -1553,7 +1553,6 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 			parent := bc.GetHeaderByHash(block.Header().ParentHash)
 
 			if parent.Root == block.Root() {
-				log.Info("writeBlockAndSetHead", "blockChange", blockChange)
 				bc.hooks.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
 			}
 
@@ -1852,10 +1851,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		if bc.hooks != nil && bc.hooks.OnBlockStart != nil {
 			bc.hooks.OnBlockStart(block)
 		}
-		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)
 		if bc.hooks != nil && bc.hooks.OnBlockEnd != nil {
-			bc.hooks.OnBlockEnd(err)
+			defer bc.hooks.OnBlockEnd(err)
 		}
+		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)
 		if err != nil {
 			bc.reportBlock(block, receipts, err)
 			followupInterrupt.Store(true)
@@ -2431,7 +2430,6 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 		parent := bc.GetHeaderByHash(head.Header().ParentHash)
 
 		if parent.Root == head.Root() {
-			log.Info("SetCanonical", "blocchange", blockChange)
 			bc.hooks.OnCommit(parent.Root, head.Root(), nil, nil, nil, nil, nil, nil)
 		}
 
