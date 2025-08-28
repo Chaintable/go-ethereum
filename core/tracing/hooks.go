@@ -65,7 +65,6 @@ type (
 	// LogHook is called when a log is emitted.
 	LogHook = func(log *types.Log)
 
-	OnSystemCallStartHookV2 = func(vm *VMContext)
 )
 
 type Hooks struct {
@@ -76,7 +75,6 @@ type Hooks struct {
 	OnBlockchainInit        BlockchainInitHook
 	OnClose                 CloseHook
 	OnBlockStart            BlockStartHook
-	OnSystemCallStartHookV2 OnSystemCallStartHookV2
 	OnBlockEnd              BlockEndHook
 	OnGenesisBlock          GenesisBlockHook
 	OnLog                   LogHook
