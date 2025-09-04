@@ -19,6 +19,7 @@ package prometheus
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -52,6 +53,10 @@ func (c *collector) addCounter(name string, m metrics.Counter) {
 
 func (c *collector) addGauge(name string, m metrics.Gauge) {
 	c.writeGaugeCounter(name, m.Value())
+}
+
+func (c *collector) addGaugeInfo(name string, m metrics.GaugeInfoSnapshot) {
+	c.writeGaugeInfo(name, m.Value())
 }
 
 func (c *collector) addGaugeFloat64(name string, m metrics.GaugeFloat64) {
@@ -117,4 +122,17 @@ func (c *collector) writeSummaryPercentile(name, p string, value interface{}) {
 
 func mutateKey(key string) string {
 	return strings.Replace(key, "/", "_", -1)
+}
+
+func (c *collector) writeGaugeInfo(name string, value metrics.GaugeInfoValue) {
+	name = mutateKey(name)
+	c.buff.WriteString(fmt.Sprintf(typeGaugeTpl, name))
+	c.buff.WriteString(name)
+	c.buff.WriteString(" ")
+	var kvs []string
+	for k, v := range value {
+		kvs = append(kvs, fmt.Sprintf("%v=%q", k, v))
+	}
+	sort.Strings(kvs)
+	c.buff.WriteString(fmt.Sprintf("{%v} 1\n\n", strings.Join(kvs, ", ")))
 }

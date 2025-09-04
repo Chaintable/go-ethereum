@@ -122,6 +122,8 @@ func (r *StandardRegistry) GetAll() map[string]map[string]interface{} {
 			values["count"] = metric.Count()
 		case Gauge:
 			values["value"] = metric.Value()
+		case GaugeInfo:
+			values["value"] = metric.Snapshot().Value()
 		case GaugeFloat64:
 			values["value"] = metric.Value()
 		case Healthcheck:
@@ -196,7 +198,7 @@ func (r *StandardRegistry) register(name string, i interface{}) error {
 		return DuplicateMetric(name)
 	}
 	switch i.(type) {
-	case Counter, Gauge, GaugeFloat64, Healthcheck, Histogram, Meter, Timer, ResettingTimer:
+	case Counter, Gauge, GaugeInfo, GaugeFloat64, Healthcheck, Histogram, Meter, Timer, ResettingTimer:
 		r.metrics[name] = i
 	}
 	return nil
