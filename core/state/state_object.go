@@ -221,6 +221,9 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 			}
 		}()
 	}
+	if _, destructed := s.db.snapDestructs[s.addrHash]; destructed {
+		return common.Hash{}
+	}
 	if s.db.snap != nil {
 		if metrics.EnabledExpensive {
 			meter = &s.db.SnapshotStorageReads
@@ -231,9 +234,6 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 		//   1) resurrect happened, and new slot values were set -- those should
 		//      have been handles via pendingStorage above.
 		//   2) we don't have new values, and can deliver empty response back
-		if _, destructed := s.db.snapDestructs[s.addrHash]; destructed {
-			return common.Hash{}
-		}
 		enc, err = s.db.snap.Storage(s.addrHash, crypto.Keccak256Hash(key.Bytes()))
 	}
 	// If snapshot unavailable or reading from it failed, load from the database
@@ -360,16 +360,14 @@ func (s *stateObject) updateTrie(db Database) Trie {
 			s.setError(tr.TryUpdate(key[:], v))
 		}
 		// If state snapshotting is active, cache the data til commit
-		if s.db.snap != nil {
-			if storage == nil {
-				// Retrieve the old storage map, if available, create a new one otherwise
-				if storage = s.db.snapStorage[s.addrHash]; storage == nil {
-					storage = make(map[common.Hash][]byte)
-					s.db.snapStorage[s.addrHash] = storage
-				}
+		if storage == nil {
+			// Retrieve the old storage map, if available, create a new one otherwise
+			if storage = s.db.snapStorage[s.addrHash]; storage == nil {
+				storage = make(map[common.Hash][]byte)
+				s.db.snapStorage[s.addrHash] = storage
 			}
-			storage[crypto.HashData(hasher, key[:])] = v // v will be nil if value is 0x00
 		}
+		storage[crypto.HashData(hasher, key[:])] = v                // v will be nil if value is 0x00
 		usedStorage = append(usedStorage, common.CopyBytes(key[:])) // Copy needed for closure
 	}
 	if s.db.prefetcher != nil {
