@@ -85,6 +85,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		log.Crit("vmConfig.Tracer must be a pipeline.Tracer")
 	} else {
 		pipelineTracer = p
+		vmenv.Config.Tracer = pipelineTracer
 	}
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, vmenv, statedb)
