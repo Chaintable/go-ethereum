@@ -2992,7 +2992,6 @@ func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
 }
 
-<<<<<<< HEAD
 func (bc *BlockChain) GetHeaderByHash2(blockHash common.Hash) *types.Header {
 	header := bc.GetHeaderByHash(blockHash)
 	if header == nil {
@@ -3008,9 +3007,9 @@ func (bc *BlockChain) GetHeaderByHash2(blockHash common.Hash) *types.Header {
 		}
 	}
 	return header
-=======
+}
+
 // StateSizer returns the state size tracker, or nil if it's not initialized
 func (bc *BlockChain) StateSizer() *state.SizeTracker {
 	return bc.stateSizer
->>>>>>> v1.16.5
 }
