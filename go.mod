@@ -6,6 +6,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.2.0
 	github.com/Chaintable/pipeline v0.0.60
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251119083800-2aa1d4cc79d7
 	github.com/VictoriaMetrics/fastcache v1.13.0
 	github.com/aws/aws-sdk-go-v2 v1.32.5
 	github.com/aws/aws-sdk-go-v2/config v1.28.5
@@ -23,7 +24,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/donovanhide/eventsource v0.0.0-20210830082556-c59027999da0
 	github.com/dop251/goja v0.0.0-20230605162241-28ee0ee714f3
-	github.com/ethereum/c-kzg-4844/v2 v2.1.3
+	github.com/ethereum/c-kzg-4844/v2 v2.1.5
 	github.com/ethereum/go-bigmodexpfix v0.0.0-20250911101455-f9e208c548ab
 	github.com/ethereum/go-verkle v0.2.2
 	github.com/fatih/color v1.16.0
