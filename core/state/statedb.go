@@ -28,6 +28,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -1526,4 +1527,57 @@ func (s *StateDB) Witness() *stateless.Witness {
 
 func (s *StateDB) AccessEvents() *AccessEvents {
 	return s.accessEvents
+}
+
+// StateDiff computes the state diff after all state changes have been applied.
+// It returns the root hash, destructed accounts, account changes, storage changes, and code changes.
+func (s *StateDB) StateDiff(deleteEmptyObjects bool) (root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storages map[common.Hash]map[common.Hash][]byte, codes map[common.Hash][]byte, err error) {
+	root = s.IntermediateRoot(deleteEmptyObjects)
+	destructs = make(map[common.Hash]struct{})
+	accounts = make(map[common.Hash][]byte)
+	storages = make(map[common.Hash]map[common.Hash][]byte)
+	codes = make(map[common.Hash][]byte)
+	var (
+		buf    = crypto.NewKeccakState()
+		encode = func(val common.Hash) []byte {
+			if val == (common.Hash{}) {
+				return nil
+			}
+			blob, _ := rlp.EncodeToBytes(common.TrimLeftZeroes(val[:]))
+			return blob
+		}
+	)
+	for addr, prevObj := range s.stateObjectsDestruct {
+		prev := prevObj.origin
+		if prev == nil {
+			continue
+		}
+		addrHash := crypto.HashData(buf, addr.Bytes())
+		destructs[addrHash] = struct{}{}
+	}
+	for addr, op := range s.mutations {
+		if op.isDelete() {
+			continue
+		}
+		obj := s.stateObjects[addr]
+		if obj == nil {
+			panic("missing state object")
+		}
+		addrHash := crypto.HashData(buf, addr.Bytes())
+		accounts[addrHash] = types.SlimAccountRLP(obj.data)
+		if obj.dirtyCode {
+			codes[common.Hash(obj.CodeHash())] = obj.code
+		}
+		for key, val := range obj.pendingStorage {
+			if val == obj.originStorage[key] {
+				continue
+			}
+			hash := crypto.HashData(buf, key[:])
+			if _, ok := storages[addrHash]; !ok {
+				storages[addrHash] = make(map[common.Hash][]byte)
+			}
+			storages[addrHash][hash] = encode(val)
+		}
+	}
+	return
 }
