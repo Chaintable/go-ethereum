@@ -1,6 +1,6 @@
 ## Go Ethereum (DeBank Modified Version)
 
-This is a modified version of [go-ethereum](https://github.com/ethereum/go-ethereum) (based on v1.16.7) to support [leafage-evm](https://github.com/user/leafage-evm) - a lightweight EVM executor for state queries.
+This is a modified version of [go-ethereum](https://github.com/ethereum/go-ethereum) (based on v1.16.7) to support [leafage-evm](https://github.com/Chaintable/leafage-evm) - a lightweight EVM executor for state queries.
 
 ### Key Modifications (vs v1.16.7)
 
