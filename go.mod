@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.2.0
-	github.com/Chaintable/pipeline v0.0.63
+	github.com/Chaintable/pipeline v0.0.64-0.20260129103944-916e1677b227
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251119083800-2aa1d4cc79d7
 	github.com/VictoriaMetrics/fastcache v1.13.0
@@ -169,7 +169,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-// replace github.com/Chaintable/pipeline => /Users/jacob/Documents/debank/pipeline
 tool (
 	github.com/fjl/gencodec
 	golang.org/x/tools/cmd/stringer
