@@ -1,4 +1,58 @@
-## Go Ethereum
+## Go Ethereum (DeBank Modified Version)
+
+This is a modified version of [go-ethereum](https://github.com/ethereum/go-ethereum) (based on v1.16.7) to support [leafage-evm](https://github.com/user/leafage-evm) - a lightweight EVM executor for state queries.
+
+### Key Modifications (vs v1.16.7)
+
+#### 1. `trace_debankBlock` RPC API
+
+New RPC endpoint that returns comprehensive block data including:
+- Block header and transaction list
+- Execution traces (call traces)
+- Event logs
+- State diff (account/storage changes, code deployments)
+
+This API is used by leafage-evm in HTTP fallback mode to receive state updates from Geth.
+
+**Usage:**
+```bash
+curl -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"trace_debankBlock","params":["0x1"],"id":1}'
+```
+
+#### 2. `pipeline` Living Tracer
+
+A real-time tracer that hooks into block processing and uploads data to Kafka + S3:
+- Block information
+- State diffs
+- Block files (transactions, traces, events)
+
+**Enable via CLI:**
+```bash
+geth --vmtrace pipeline --vmtrace.jsonconfig '{"kafka_brokers":"...", "s3_bucket":"..."}'
+```
+
+#### 3. Core Modifications
+
+| File | Changes |
+|------|---------|
+| `core/blockchain.go` | Added hooks for genesis block, block commit, and balance change tracking |
+| `core/state/statedb.go` | Added `StateDiff()` method to export state changes |
+| `core/tracing/hooks.go` | Extended with `OnGenesisBlock`, `OnCommit`, `OnBlockDBStart` hooks |
+| `eth/backend.go` | Registered `trace` namespace for DeBank API |
+| `params/version.go` | Added version tracking for DeBank releases |
+
+#### 4. Genesis Block Support
+
+Special handling for genesis block to generate proper state diffs and synthetic transactions for:
+- Initial account balances
+- Pre-deployed contract code
+- Native token contract creation
+
+---
+
+## Go Ethereum (Original)
 
 Golang execution layer implementation of the Ethereum protocol.
 
