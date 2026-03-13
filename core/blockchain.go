@@ -1756,47 +1756,49 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 	// Set new head.
 	bc.writeHeadBlock(block)
 
-	// 先确保 pipeline tracer 不为空，然后再判断是否需要push kafka
-	// 上一个push kafka的block, 必然存在(至少有genesis block)
-	// 上一个push kafka的block比当前的head block还要新，说明有unwind回退，不需要处理, 即使是fork，等有更新的block的时候再一起push
-	isLeader := leader.GlobalManager.IsLeader()
-	leader.GlobalManager.RLock()
-	lastPushedBlock := tracer.NodeXPusher.LastPushedBlock()
-	leader.GlobalManager.RUnlock()
+	if tracer.NodeXPusher != nil {
+		// 先确保 pipeline tracer 不为空，然后再判断是否需要push kafka
+		// 上一个push kafka的block, 必然存在(至少有genesis block)
+		// 上一个push kafka的block比当前的head block还要新，说明有unwind回退，不需要处理, 即使是fork，等有更新的block的时候再一起push
+		isLeader := leader.GlobalManager.IsLeader()
+		leader.GlobalManager.RLock()
+		lastPushedBlock := tracer.NodeXPusher.LastPushedBlock()
+		leader.GlobalManager.RUnlock()
 
-	if tracer.NodeXPusher != nil && isLeader && lastPushedBlock.BlockNumber <= block.NumberU64() {
-		_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
-			BlockNumber: block.NumberU64(),
-			Hash:        block.Hash(),
-			ParentHash:  block.ParentHash(),
-			Timestamp:   block.Time(),
-		})
-		var blockChange *ptypes.BlockChangeNotification
-		if len(dropBlocks) > 0 {
-			blockChange = &ptypes.BlockChangeNotification{
-				ChangeType: 2,
-				NewBlocks:  newBlocks,
-				DropBlocks: dropBlocks,
+		if isLeader && lastPushedBlock.BlockNumber <= block.NumberU64() {
+			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
+				BlockNumber: block.NumberU64(),
+				Hash:        block.Hash(),
+				ParentHash:  block.ParentHash(),
+				Timestamp:   block.Time(),
+			})
+			var blockChange *ptypes.BlockChangeNotification
+			if len(dropBlocks) > 0 {
+				blockChange = &ptypes.BlockChangeNotification{
+					ChangeType: 2,
+					NewBlocks:  newBlocks,
+					DropBlocks: dropBlocks,
+				}
+			} else if len(newBlocks) > 0 {
+				blockChange = &ptypes.BlockChangeNotification{
+					ChangeType: 1,
+					NewBlocks:  newBlocks,
+				}
 			}
-		} else if len(newBlocks) > 0 {
-			blockChange = &ptypes.BlockChangeNotification{
-				ChangeType: 1,
-				NewBlocks:  newBlocks,
+
+			parent := bc.GetHeaderByHash(block.Header().ParentHash)
+
+			if parent.Root == block.Root() {
+				bc.logger.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
 			}
-		}
 
-		parent := bc.GetHeaderByHash(block.Header().ParentHash)
-
-		if parent.Root == block.Root() {
-			bc.logger.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
-		}
-
-		if blockChange != nil {
-			err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange)
-			if err != nil {
-				log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
+			if blockChange != nil {
+				err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange)
+				if err != nil {
+					log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
+				}
+				log.Info("NodeXPusher PushBlockChangeNotification", "blockChange", blockChange)
 			}
-			log.Info("NodeXPusher PushBlockChangeNotification", "blockChange", blockChange)
 		}
 	}
 	//bc.chainFeed.Send(ChainEvent{Header: block.Header()})
