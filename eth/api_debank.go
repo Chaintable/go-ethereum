@@ -236,7 +236,7 @@ func (api *DebankAPI) DebankBlock(ctx context.Context, blockNrOrHash rpc.BlockNu
 	if err != nil {
 		return nil, err
 	}
-	statedb, release, err := api.eth.APIBackend.StateAtBlock(ctx, parent, 128, nil, true, false)
+	statedb, release, err := api.eth.APIBackend.StateAtBlock(ctx, parent, nil, true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +262,7 @@ func (api *DebankAPI) DebankBlock(ctx context.Context, blockNrOrHash rpc.BlockNu
 	rpcTracer.OnBlockStart(block)
 
 	// Process the block using the standard processor
-	_, err = api.eth.BlockChain().Processor().Process(block, statedb, vm.Config{Tracer: tracer.Hooks})
+	_, err = api.eth.BlockChain().Processor().Process(ctx, block, statedb, vm.Config{Tracer: tracer.Hooks})
 	if err != nil {
 		return nil, fmt.Errorf("could not process block: %w", err)
 	}
