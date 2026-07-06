@@ -16,9 +16,11 @@ general-purpose fork of go-ethereum.
 | Docs about running this write node | Here |
 
 We cannot accept chain-core changes in this fork: they would diverge from upstream
-and be lost or cause conflicts at the next upstream merge. If an upstream fix
-matters to this fork, open an issue here linking the upstream PR/commit and we
-will pull it in with the next sync.
+and be lost or cause conflicts at the next upstream merge. To contribute
+chain-core changes, follow the upstream
+[contributing guide](https://github.com/ethereum/go-ethereum/blob/master/.github/CONTRIBUTING.md).
+If an upstream fix matters to this fork, open an issue here linking the upstream
+PR/commit and we will pull it in with the next sync.
 
 ## Reporting issues
 

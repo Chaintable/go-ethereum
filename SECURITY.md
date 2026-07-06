@@ -6,8 +6,7 @@ export block data to the [leafage-evm](https://github.com/Chaintable/leafage-evm
 pipeline.
 
 Security issues therefore fall into two categories, each with its own process:
-**upstream issues follow the upstream security policy** (preserved unmodified in
-[UPSTREAM_SECURITY.md](./UPSTREAM_SECURITY.md)); **issues in the Chaintable
+**upstream issues follow the upstream security policy; issues in the Chaintable
 additions follow ours** (this document). The key question: does the issue
 reproduce on an unmodified upstream build?
 
@@ -21,10 +20,9 @@ this fork.
 Report it to the upstream project following **their** security policy — for
 upstream issues the upstream process applies, not this document:
 
-- [UPSTREAM_SECURITY.md](./UPSTREAM_SECURITY.md) — the upstream policy, preserved
-  in this fork
-- Canonical, current version:
-  https://github.com/ethereum/go-ethereum/security/policy
+- Current: https://github.com/ethereum/go-ethereum/security/policy
+- As of this fork's base (v1.17.4):
+  https://github.com/ethereum/go-ethereum/blob/v1.17.4/SECURITY.md
 
 We pick up upstream security fixes through periodic upstream merges; please do not
 disclose upstream vulnerabilities here.
