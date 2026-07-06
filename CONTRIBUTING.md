@@ -1,63 +1,122 @@
 # Contributing
 
-This repository is a Chaintable **write-node fork** of [ethereum/go-ethereum](https://github.com/ethereum/go-ethereum).
-Its purpose is to run node(s) that produce block data for the
-[leafage-evm](https://github.com/Chaintable/leafage-evm) pipeline, for the chain(s)
-listed in this repository's CI configuration and README. It is not a
-general-purpose fork of go-ethereum.
+Thanks for your interest in contributing.
 
-## What belongs here vs upstream (read this first)
+This repository is a **fork**: upstream [ethereum/go-ethereum](https://github.com/ethereum/go-ethereum)
+plus a small layer of Chaintable additions. It runs node(s) that produce block
+data for the [leafage-evm](https://github.com/Chaintable/leafage-evm) pipeline,
+for the chain(s) listed in this repository's CI configuration and README. It is
+not a general-purpose fork of go-ethereum.
 
-| Change | Where it goes |
-|---|---|
-| Chain client features / bug fixes (consensus, p2p, EVM, RPC, txpool) | Upstream: https://github.com/ethereum/go-ethereum/issues |
-| Block-data tracer hooks / pipeline output | Here |
-| Dockerfile, published images, CI workflows | Here |
-| Docs about running this write node | Here |
+**First, determine where your change belongs:**
 
-We cannot accept chain-core changes in this fork: they would diverge from upstream
-and be lost or cause conflicts at the next upstream merge. To contribute
-chain-core changes, follow the upstream
-[contributing guide](https://github.com/ethereum/go-ethereum/blob/master/.github/CONTRIBUTING.md).
-If an upstream fix matters to this fork, open an issue here linking the upstream
-PR/commit and we will pull it in with the next sync.
+- **Chain client changes** (consensus, p2p, EVM, RPC, txpool) — contribute
+  **upstream**, following their
+  [contributing guide](https://github.com/ethereum/go-ethereum/blob/master/.github/CONTRIBUTING.md)
+  and [issue tracker](https://github.com/ethereum/go-ethereum/issues). We cannot
+  accept chain-core changes in this fork: they would diverge from upstream and be
+  lost or cause conflicts at the next upstream merge. If an upstream fix matters
+  to this fork, open an issue here linking the upstream PR/commit and we will
+  pull it in with the next sync.
 
-## Reporting issues
+- **Chaintable layer changes** — the block-data tracer hooks, pipeline output,
+  Dockerfile, published images, CI workflows, or docs about running this write
+  node — contribute **here**, following the process below.
 
-- Reproducible on a vanilla upstream build → upstream issue tracker:
-  https://github.com/ethereum/go-ethereum/issues
-- Only reproducible with our image / our data output (tracer output, pipeline
-  payloads, image build) → open an issue **here**, including the image tag, chain,
-  and block height
-- Security issues → see [SECURITY.md](./SECURITY.md); never open a public issue
+---
 
-## Development workflow
+## Our Process (contributions to the Chaintable layer)
 
-1. Fork the repository and create a branch from `main`
-2. Keep changes focused on the Chaintable layer (see table above)
-3. Build and toolchain follow upstream (Go); see the upstream
-   [developer docs](https://geth.ethereum.org/docs) for environment setup
-4. Open a PR. CI builds the Docker images for this repository. Note: the image
-   publishing steps need repository credentials, which GitHub does not provide to
-   pull requests from forks — those steps failing on a fork PR is expected, and a
-   maintainer will build and verify your change on an internal branch.
+### Getting Started
+
+Requirements:
+
+* Go (version per `go.mod`)
+* Upstream build prerequisites — see the upstream
+  [developer docs](https://geth.ethereum.org/docs)
+
+### Development Workflow
+
+1. Fork the repository
+2. Create a branch from `main`
+3. Make changes, focused on the Chaintable layer
+4. Run local checks
+5. Open a PR
 
 Keep PRs small and focused.
 
-## Upstream syncs & releases
+### Local Checks (must pass)
 
-- Upstream merges are performed by maintainers
-- Release tags follow `<upstream-version>-debank-N` (e.g. `v1.17.4-debank-1`); a
+```bash
+make geth
+make test
+```
+
+### Code Guidelines
+
+* Keep the diff versus upstream minimal — prefer hooks over invasive edits
+* Match upstream code style and conventions (`gofmt`)
+* Prefer simple and explicit logic
+* Do not change chain-core behavior (see the table above — that belongs upstream)
+
+### Testing
+
+Changes to the Chaintable layer must include tests where practical. At minimum,
+describe how you verified the emitted data: chain, block range, and what you
+compared it against.
+
+### Pull Requests
+
+Before submitting:
+
+* Local checks pass
+* Tests added or updated
+* Behavior changes clearly explained
+
+PRs should include:
+
+* Summary
+* Motivation
+* Testing details
+* Compatibility impact
+
+Note on CI: it builds the Docker images for this repository, and the image
+publishing steps need repository credentials, which GitHub does not provide to
+pull requests from forks — those steps failing on a fork PR is expected. A
+maintainer will build and verify your change on an internal branch.
+
+### Commit Guidelines
+
+* Use clear, descriptive messages
+
+Example:
+
+```
+tracer: fix state-diff ordering for reorged blocks
+```
+
+### Upstream Syncs & Releases
+
+* Upstream merges are performed by maintainers
+* Release tags follow `<upstream-version>-debank-N` (e.g. `v1.17.4-debank-1`); a
   GitHub Release publishes the versioned images to
   `public.ecr.aws/b2h7a5c4/chaintable/go-ethereum` and the per-chain
   `<chain>-writer` aliases
 
-## Pull requests
+### Reporting Issues
 
-Before submitting: behavior changes explained, with a summary, motivation, and
-testing details.
+* Reproducible on a vanilla upstream build → upstream issue tracker:
+  https://github.com/ethereum/go-ethereum/issues
+* Only reproducible with our image / our data output → open an issue **here**,
+  including the image tag, chain, and block height
 
-## License
+### Security
+
+Do not disclose vulnerabilities publicly.
+
+See [SECURITY.md](./SECURITY.md) for reporting instructions.
+
+### License
 
 By contributing, you agree that your contributions are licensed under the same
 terms as this repository — see [COPYING](./COPYING) (GPL-3.0) and
