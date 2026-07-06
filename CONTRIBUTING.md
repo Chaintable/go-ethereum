@@ -3,10 +3,10 @@
 Thanks for your interest in contributing.
 
 This repository is a **fork**: upstream [ethereum/go-ethereum](https://github.com/ethereum/go-ethereum)
-plus a small layer of Chaintable additions. It runs node(s) that produce block
-data for the [leafage-evm](https://github.com/Chaintable/leafage-evm) pipeline,
-for the chain(s) listed in this repository's CI configuration and README. It is
-not a general-purpose fork of go-ethereum.
+plus the [Chaintable pipeline](https://github.com/Chaintable/pipeline) tracer. It
+runs write node(s) that produce block data for the Chaintable data pipeline, for
+the chain(s) listed in this repository's CI configuration and README. It is not
+a general-purpose fork of go-ethereum.
 
 **First, determine where your change belongs:**
 
@@ -19,13 +19,13 @@ not a general-purpose fork of go-ethereum.
   to this fork, open an issue here linking the upstream PR/commit and we will
   pull it in with the next sync.
 
-- **Chaintable layer changes** — the block-data tracer hooks, pipeline output,
+- **Pipeline layer changes** — the block-data tracer hooks, pipeline output,
   Dockerfile, published images, CI workflows, or docs about running this write
   node — contribute **here**, following the process below.
 
 ---
 
-## Our Process (contributions to the Chaintable layer)
+## Our Process (contributions to the Chaintable pipeline layer)
 
 ### Getting Started
 
@@ -39,7 +39,7 @@ Requirements:
 
 1. Fork the repository
 2. Create a branch from `main`
-3. Make changes, focused on the Chaintable layer
+3. Make changes, focused on the pipeline layer
 4. Run local checks
 5. Open a PR
 
@@ -57,11 +57,12 @@ make test
 * Keep the diff versus upstream minimal — prefer hooks over invasive edits
 * Match upstream code style and conventions (`gofmt`)
 * Prefer simple and explicit logic
-* Do not change chain-core behavior (see the table above — that belongs upstream)
+* Do not change chain-core behavior (that belongs upstream — see the top of this
+  document)
 
 ### Testing
 
-Changes to the Chaintable layer must include tests where practical. At minimum,
+Changes to the pipeline layer must include tests where practical. At minimum,
 describe how you verified the emitted data: chain, block range, and what you
 compared it against.
 

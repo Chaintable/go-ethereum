@@ -1,8 +1,9 @@
 # Security Policy
 
 This repository is a **fork**: upstream [ethereum/go-ethereum](https://github.com/ethereum/go-ethereum)
-plus a small layer of Chaintable additions that export block data to the
-[leafage-evm](https://github.com/Chaintable/leafage-evm) pipeline.
+plus the [Chaintable pipeline](https://github.com/Chaintable/pipeline) tracer — a
+small layer of additions that exports block data (headers, transactions, call
+traces, receipts, events, state diffs) to the Chaintable data pipeline.
 
 **First, determine where the issue lives.** The key question: does it reproduce
 on an unmodified upstream build?
@@ -20,10 +21,10 @@ on an unmodified upstream build?
 
 - **This fork's issue** — only reproduces with this fork's binaries or published
   images (`public.ecr.aws/b2h7a5c4/chaintable/go-ethereum` and the per-chain
-  `<chain>-writer` aliases), or involves the Chaintable additions: the block-data
-  tracer hooks, the `trace_debank*` RPC namespace (e.g. `trace_debankBlock`),
-  pipeline data output, the Dockerfile / image build, or the CI workflows.
-  **Follow our process below.**
+  `<chain>-writer` aliases), or involves the Chaintable pipeline layer: the
+  block-data tracer hooks, the `trace_debank*` RPC namespace (e.g.
+  `trace_debankBlock`), pipeline data output, the Dockerfile / image build, or
+  the CI workflows. **Follow our process below.**
 
 - **Not sure, or cannot test against vanilla upstream?** Report it to us privately
   (see below). We will triage it, and if it turns out to be an upstream issue we
@@ -32,7 +33,7 @@ on an unmodified upstream build?
 
 ---
 
-## Our Process (issues in the Chaintable additions)
+## Our Process (issues in the Chaintable pipeline layer)
 
 ### Supported Versions
 
@@ -46,8 +47,8 @@ We provide security updates for the latest `main` branch and recent releases.
 
 ### Reporting a Vulnerability
 
-If you discover a security issue in this fork's additions, **do not open a public
-issue**.
+If you discover a security issue in the Chaintable pipeline layer, **do not open
+a public issue**.
 
 Please report it privately:
 
@@ -79,7 +80,7 @@ We aim to:
 
 ### Scope
 
-Typical security-relevant areas of the Chaintable layer include:
+Typical security-relevant areas of the Chaintable pipeline layer include:
 
 - Integrity of the emitted block data (ordering, duplication, corruption)
 - The `trace_debank*` RPC namespace
@@ -88,6 +89,7 @@ Typical security-relevant areas of the Chaintable layer include:
 
 ### Notes
 
-This fork is a data producer: its output feeds downstream indexing systems
-(leafage-evm and the Chaintable pipeline). Security issues here may propagate
+This fork is a data producer for the
+[Chaintable pipeline](https://github.com/Chaintable/pipeline): its output feeds
+downstream indexing and query systems. Security issues here may propagate
 downstream — please report anything suspicious.
