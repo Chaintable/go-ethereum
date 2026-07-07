@@ -18,11 +18,10 @@ on an unmodified upstream build?
   not disclose upstream vulnerabilities here.
 
 - **This fork's issue** — only reproduces with this fork's binaries or published
-  images (`public.ecr.aws/b2h7a5c4/chaintable/go-ethereum` and the per-chain
-  `<chain>-writer` aliases), or involves the Chaintable pipeline layer: the
-  block-data tracer hooks, the `trace_debank*` RPC namespace (e.g.
-  `trace_debankBlock`), pipeline data output, the Dockerfile / image build, or
-  the CI workflows. **Follow our process below.**
+  images, or involves the Chaintable pipeline layer: the block-data tracer hooks,
+  the `trace_debank*` RPC namespace (e.g. `trace_debankBlock`), pipeline data
+  output, the Dockerfile / image build, or the CI workflows. **Follow our
+  process below.**
 
 - **Not sure, or cannot test against vanilla upstream?** Report it to us privately
   (see below). We will triage it, and if it turns out to be an upstream issue we
@@ -35,11 +34,12 @@ on an unmodified upstream build?
 
 ### Supported Versions
 
-We provide security updates for the latest `main` branch.
+We provide security updates for the latest `main` branch and recent releases.
 
 | Version | Supported |
 |---------|----------|
 | main    | ✅       |
+| <latest release> | ✅ |
 | older versions   | ❌ |
 
 ### Reporting a Vulnerability

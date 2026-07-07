@@ -98,9 +98,7 @@ tracer: fix state-diff ordering for reorged blocks
 ### Releases
 
 * Release tags follow `v<base-version>-debank-N` (e.g. `v1.17.4-debank-1`); a
-  GitHub Release publishes the versioned images to
-  `public.ecr.aws/b2h7a5c4/chaintable/go-ethereum` and the per-chain
-  `<chain>-writer` aliases
+  GitHub Release publishes the versioned images
 
 ### Reporting Issues
 
