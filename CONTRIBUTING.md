@@ -19,9 +19,9 @@ a general-purpose fork of go-ethereum.
   to this fork, open an issue here linking the upstream PR/commit and we will
   pull it in with the next sync.
 
-- **Pipeline layer changes** — the block-data tracer hooks, pipeline output,
-  Dockerfile, published images, CI workflows, or docs about running this write
-  node — contribute **here**, following the process below.
+- **Pipeline layer changes** — the pipeline tracer and its block-data output,
+  the Dockerfile, published images, CI workflows, or docs about running this
+  write node — contribute **here**, following the process below.
 
 ---
 

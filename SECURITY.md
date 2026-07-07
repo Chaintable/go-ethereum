@@ -18,10 +18,9 @@ on an unmodified upstream build?
   not disclose upstream vulnerabilities here.
 
 - **This fork's issue** — only reproduces with this fork's binaries or published
-  images, or involves the Chaintable pipeline layer: the block-data tracer hooks,
-  the `trace_debank*` RPC namespace (e.g. `trace_debankBlock`), pipeline data
-  output, the Dockerfile / image build, or the CI workflows. **Follow our
-  process below.**
+  images, or involves the Chaintable pipeline layer: the pipeline tracer and its
+  block-data output, the Dockerfile / image build, or the CI workflows.
+  **Follow our process below.**
 
 - **Not sure, or cannot test against vanilla upstream?** Report it to us privately
   (see below). We will triage it, and if it turns out to be an upstream issue we
@@ -78,8 +77,8 @@ We aim to:
 Typical security-relevant areas of the Chaintable pipeline layer include:
 
 - Integrity of the emitted block data (ordering, duplication, corruption)
-- The `trace_debank*` RPC namespace
-- Resource exhaustion introduced by the tracer hooks (memory / goroutine leaks)
+- The pipeline tracer and any RPC endpoints it adds
+- Resource exhaustion introduced by the pipeline tracer (memory / goroutine leaks)
 - The published Docker images and the build / CI pipeline
 
 ### Notes
