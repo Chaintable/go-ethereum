@@ -32,7 +32,7 @@ a general-purpose fork of go-ethereum.
 Requirements:
 
 * Go (version per `go.mod`)
-* Upstream build prerequisites — see the upstream
+* Standard go-ethereum build prerequisites — see the
   [developer docs](https://geth.ethereum.org/docs)
 
 ### Development Workflow
@@ -54,11 +54,10 @@ make test
 
 ### Code Guidelines
 
-* Keep the diff versus upstream minimal — prefer hooks over invasive edits
-* Match upstream code style and conventions (`gofmt`)
+* Keep the diff minimal — prefer hooks over invasive edits to client code
+* Match the existing code style and conventions (`gofmt`)
 * Prefer simple and explicit logic
-* Do not change chain-core behavior (that belongs upstream — see the top of this
-  document)
+* Do not change chain-core behavior (see the top of this document)
 
 ### Testing
 
@@ -96,20 +95,21 @@ Example:
 tracer: fix state-diff ordering for reorged blocks
 ```
 
-### Upstream Syncs & Releases
+### Releases
 
-* Upstream merges are performed by maintainers
-* Release tags follow `<upstream-version>-debank-N` (e.g. `v1.17.4-debank-1`); a
+* Release tags follow `v<base-version>-debank-N` (e.g. `v1.17.4-debank-1`); a
   GitHub Release publishes the versioned images to
   `public.ecr.aws/b2h7a5c4/chaintable/go-ethereum` and the per-chain
   `<chain>-writer` aliases
 
 ### Reporting Issues
 
-* Reproducible on a vanilla upstream build → upstream issue tracker:
-  https://github.com/ethereum/go-ethereum/issues
-* Only reproducible with our image / our data output → open an issue **here**,
-  including the image tag, chain, and block height
+Please include:
+
+* Image tag or commit
+* Chain and block height
+* Reproduction steps
+* Expected vs actual behavior
 
 ### Security
 
@@ -121,4 +121,4 @@ See [SECURITY.md](./SECURITY.md) for reporting instructions.
 
 By contributing, you agree that your contributions are licensed under the same
 terms as this repository — see [COPYING](./COPYING) (GPL-3.0) and
-[COPYING.LESSER](./COPYING.LESSER) (LGPL-3.0), inherited from upstream.
+[COPYING.LESSER](./COPYING.LESSER) (LGPL-3.0).

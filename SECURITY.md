@@ -1,9 +1,9 @@
 # Security Policy
 
 This repository is a **fork**: upstream [ethereum/go-ethereum](https://github.com/ethereum/go-ethereum)
-plus the [Chaintable pipeline](https://github.com/Chaintable/pipeline) tracer — a
-small layer of additions that exports block data (headers, transactions, call
-traces, receipts, events, state diffs) to the Chaintable data pipeline.
+plus the [Chaintable pipeline](https://github.com/Chaintable/pipeline) tracer,
+which exports block data (headers, transactions, call traces, receipts, events,
+state diffs) to the Chaintable data pipeline.
 
 **First, determine where the issue lives.** The key question: does it reproduce
 on an unmodified upstream build?
@@ -74,8 +74,6 @@ We aim to:
 
 - We follow **responsible disclosure**
 - Fixes may be developed privately before public release
-- We will not disclose upstream-inherited issues ahead of the upstream project's
-  own advisory
 - Credit will be given unless you request anonymity
 
 ### Scope
