@@ -35,12 +35,11 @@ on an unmodified upstream build?
 
 ### Supported Versions
 
-We provide security updates for the latest `main` branch and recent releases.
+We provide security updates for the latest `main` branch.
 
 | Version | Supported |
 |---------|----------|
 | main    | ✅       |
-| latest `-debank-N` release | ✅ |
 | older versions   | ❌ |
 
 ### Reporting a Vulnerability
