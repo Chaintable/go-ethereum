@@ -11,13 +11,11 @@ a general-purpose fork of go-ethereum.
 **First, determine where your change belongs:**
 
 - **Chain client changes** (consensus, p2p, EVM, RPC, txpool) — contribute
-  **upstream**, following their
-  [contributing guide](https://github.com/ethereum/go-ethereum/blob/master/.github/CONTRIBUTING.md)
-  and [issue tracker](https://github.com/ethereum/go-ethereum/issues). We cannot
-  accept chain-core changes in this fork: they would diverge from upstream and be
-  lost or cause conflicts at the next upstream merge. If an upstream fix matters
-  to this fork, open an issue here linking the upstream PR/commit and we will
-  pull it in with the next sync.
+  **upstream**, following their contributing process. We cannot accept
+  chain-core changes in this fork: they would diverge from upstream and be lost
+  or cause conflicts at the next upstream merge. If an upstream fix matters to
+  this fork, open an issue here linking the upstream PR/commit and we will pull
+  it in with the next sync.
 
 - **Pipeline layer changes** — the pipeline tracer and its block-data output,
   the Dockerfile, published images, CI workflows, or docs about running this
