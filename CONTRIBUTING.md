@@ -95,8 +95,8 @@ tracer: fix state-diff ordering for reorged blocks
 
 ### Releases
 
-* Release tags follow `v<base-version>-debank-N` (e.g. `v1.17.4-debank-1`); a
-  GitHub Release publishes the versioned images
+* Release tags follow `v<base-version>-ct.N` (`ct` = Chaintable; e.g.
+  `v1.17.5-ct.1`); a GitHub Release publishes the versioned images
 
 ### Reporting Issues
 
