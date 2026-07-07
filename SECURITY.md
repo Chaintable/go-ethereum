@@ -22,11 +22,6 @@ on an unmodified upstream build?
   block-data output, the Dockerfile / image build, or the CI workflows.
   **Follow our process below.**
 
-- **Not sure, or cannot test against vanilla upstream?** Report it to us privately
-  (see below). We will triage it, and if it turns out to be an upstream issue we
-  will help you report it upstream so you retain credit and any bounty
-  eligibility — or, with your consent, pass it on with attribution.
-
 ---
 
 ## Our Process (issues in the Chaintable pipeline layer)
