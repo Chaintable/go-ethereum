@@ -12,9 +12,7 @@ on an unmodified upstream build?
   networking, EVM execution, transaction pool, standard RPC, storage). It affects
   every user of the upstream client, not just this fork. **Follow the upstream
   security process, not this document:**
-  - Current: https://github.com/ethereum/go-ethereum/security/policy
-  - As of this fork's base (v1.17.4):
-    https://github.com/ethereum/go-ethereum/blob/v1.17.4/SECURITY.md
+  https://github.com/ethereum/go-ethereum/security/policy
 
   We pick up upstream security fixes through periodic upstream merges; please do
   not disclose upstream vulnerabilities here.
