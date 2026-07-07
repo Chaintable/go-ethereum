@@ -33,7 +33,7 @@ We provide security updates for the latest `main` branch and recent releases.
 | Version | Supported |
 |---------|----------|
 | main    | ✅       |
-| <latest release> | ✅ |
+| Latest release | ✅ |
 | older versions   | ❌ |
 
 ### Reporting a Vulnerability
