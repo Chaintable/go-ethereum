@@ -6,6 +6,10 @@ on:
       - created
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: 294354037686.dkr.ecr.ap-northeast-1.amazonaws.com
   IMAGE: blockchain-gethx
