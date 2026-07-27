@@ -98,6 +98,15 @@ func New(gasTip uint64, chain BlockChain, subpools []SubPool) (*TxPool, error) {
 		statedb, err = chain.StateAt(chain.Genesis().Header())
 	}
 	if err != nil {
+		// The genesis state can be unavailable too: path-scheme nodes only
+		// retain the latest states, so a node restarted during snap sync has
+		// neither the head nor the genesis state. Start from an empty state
+		// and wait for the pool reset on the next chain head event.
+		empty := types.CopyHeader(head)
+		empty.Root = types.EmptyRootHash
+		statedb, err = chain.StateAt(empty)
+	}
+	if err != nil {
 		return nil, err
 	}
 	pool := &TxPool{
