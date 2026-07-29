@@ -325,6 +325,15 @@ func (pool *LegacyPool) Init(gasTip uint64, head *types.Header, reserver txpool.
 		statedb, err = pool.chain.StateAt(pool.chain.Genesis().Header())
 	}
 	if err != nil {
+		// The genesis state can be unavailable too: path-scheme nodes only
+		// retain the latest states, so a node restarted during snap sync has
+		// neither the head nor the genesis state. Start from an empty state
+		// and wait for the pool reset on the next chain head event.
+		empty := types.CopyHeader(head)
+		empty.Root = types.EmptyRootHash
+		statedb, err = pool.chain.StateAt(empty)
+	}
+	if err != nil {
 		return err
 	}
 	pool.currentHead.Store(head)

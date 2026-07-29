@@ -247,6 +247,36 @@ func setupPoolWithConfig(config *params.ChainConfig) (*LegacyPool, *ecdsa.Privat
 	return pool, key
 }
 
+// unsyncedBlockChain simulates a chain whose states are all unavailable except
+// the empty one, mimicking a path-scheme node restarted in the middle of the
+// initial snap sync (neither the head state nor the genesis state is present).
+type unsyncedBlockChain struct {
+	*testBlockChain
+}
+
+func (bc *unsyncedBlockChain) StateAt(header *types.Header) (*state.StateDB, error) {
+	if header.Root == types.EmptyRootHash {
+		return bc.statedb, nil
+	}
+	return nil, errors.New("state is not available")
+}
+
+// Tests that the pool can still be initialized when neither the head state nor
+// the genesis state is available, by falling back to an empty state.
+func TestInitWithoutState(t *testing.T) {
+	t.Parallel()
+
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	blockchain := &unsyncedBlockChain{newTestBlockChain(params.TestChainConfig, 10000000, statedb, new(event.Feed))}
+
+	pool := New(testTxPoolConfig, blockchain)
+	if err := pool.Init(testTxPoolConfig.PriceLimit, blockchain.CurrentBlock(), newReserver()); err != nil {
+		t.Fatalf("failed to initialize pool without available states: %v", err)
+	}
+	<-pool.initDoneCh
+	pool.Close()
+}
+
 // validatePoolInternals checks various consistency invariants within the pool.
 func validatePoolInternals(pool *LegacyPool) error {
 	pool.mu.RLock()

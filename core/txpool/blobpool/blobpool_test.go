@@ -189,6 +189,37 @@ func (bc *testBlockChain) Genesis() *types.Block {
 	return types.NewBlock(bc.CurrentBlock(), nil, nil, trie.NewStackTrie(nil))
 }
 
+// unsyncedBlockChain simulates a chain whose states are all unavailable except
+// the empty one, mimicking a path-scheme node restarted in the middle of the
+// initial snap sync (neither the head state nor the genesis state is present).
+type unsyncedBlockChain struct {
+	*testBlockChain
+}
+
+func (bc *unsyncedBlockChain) StateAt(header *types.Header) (*state.StateDB, error) {
+	if header.Root == types.EmptyRootHash {
+		return bc.statedb, nil
+	}
+	return nil, errors.New("state is not available")
+}
+
+// Tests that the pool can still be initialized when neither the head state nor
+// the genesis state is available, by falling back to an empty state.
+func TestInitWithoutState(t *testing.T) {
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	chain := &unsyncedBlockChain{&testBlockChain{
+		config:  params.MainnetChainConfig,
+		basefee: uint256.NewInt(params.InitialBaseFee),
+		blobfee: uint256.NewInt(params.BlobTxMinBlobGasprice),
+		statedb: statedb,
+	}}
+	pool := New(Config{Datadir: t.TempDir()}, chain, nil)
+	if err := pool.Init(1, chain.CurrentBlock(), newReserver()); err != nil {
+		t.Fatalf("failed to initialize pool without available states: %v", err)
+	}
+	pool.Close()
+}
+
 // reserver is a utility struct to sanity check that accounts are
 // properly reserved by the blobpool (no duplicate reserves or unreserves).
 type reserver struct {
