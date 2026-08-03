@@ -470,8 +470,9 @@ func (f *chainFreezer) pruneAncientHistory(db ethdb.KeyValueStore, tail uint64) 
 		return
 	}
 	var (
-		start = time.Now()
-		from  = prev
+		start  = time.Now()
+		logged = start
+		from   = prev
 		// The ancient-aware database view is needed by the transaction
 		// unindexer to read bodies which are still in the ancient store.
 		fulldb = &freezerdb{KeyValueStore: db, chainFreezer: f}
@@ -479,6 +480,7 @@ func (f *chainFreezer) pruneAncientHistory(db ethdb.KeyValueStore, tail uint64) 
 	for prev < tail {
 		select {
 		case <-f.quit:
+			log.Info("Ancient history pruning interrupted", "pruned", prev-from, "remaining", tail-prev, "elapsed", common.PrettyDuration(time.Since(start)))
 			return
 		default:
 		}
@@ -494,7 +496,9 @@ func (f *chainFreezer) pruneAncientHistory(db ethdb.KeyValueStore, tail uint64) 
 			UnindexTransactions(fulldb, *txTail, next, f.quit, false)
 			select {
 			case <-f.quit:
-				return // don't prune bodies the unindexer didn't get through
+				// Don't prune bodies the unindexer didn't get through.
+				log.Info("Ancient history pruning interrupted", "pruned", prev-from, "remaining", tail-prev, "elapsed", common.PrettyDuration(time.Since(start)))
+				return
 			default:
 			}
 		}
@@ -507,8 +511,20 @@ func (f *chainFreezer) pruneAncientHistory(db ethdb.KeyValueStore, tail uint64) 
 			return
 		}
 		prev = next
+
+		// Report the progress of a long-running removal (e.g. the initial
+		// pruning of a large pre-existing ancient store), but stay quiet
+		// during the tiny steady-state rounds accompanying each freeze cycle.
+		if time.Since(logged) > 8*time.Second {
+			log.Info("Pruning ancient history", "pruned", prev-from, "remaining", tail-prev, "tail", prev, "elapsed", common.PrettyDuration(time.Since(start)))
+			logged = time.Now()
+		}
 	}
-	log.Debug("Pruned ancient block data", "from", from, "tail", tail, "elapsed", common.PrettyDuration(time.Since(start)))
+	logger := log.Debug
+	if time.Since(start) > 8*time.Second {
+		logger = log.Info
+	}
+	logger("Pruned ancient history", "from", from, "tail", tail, "elapsed", common.PrettyDuration(time.Since(start)))
 }
 
 // Ancient retrieves an ancient binary blob from the append-only immutable files.
