@@ -38,6 +38,13 @@ const (
 	// freezerBatchLimit is the maximum number of blocks to freeze in one batch
 	// before doing an fsync and deleting it from the key-value store.
 	freezerBatchLimit = 30000
+
+	// pruneAncientBatchLimit is the maximum number of blocks whose ancient
+	// block data is removed in one prune step when ancient pruning is enabled.
+	// Bounded steps let the transaction-index removal persist its progress and
+	// the reclaimed disk space become visible continuously while a large
+	// pre-existing ancient store is being pruned away.
+	pruneAncientBatchLimit = 100000
 )
 
 // chainFreezer is a wrapper of chain ancient store with additional chain freezing
@@ -46,6 +53,13 @@ const (
 type chainFreezer struct {
 	ancients ethdb.AncientStore // Ancient store for storing cold chain segment
 	eradb    *eradb.Store       // Optional Era database used as a backup for the pruned chain
+
+	// pruneAncient indicates that historical block data (bodies, receipts and
+	// access lists) should not be moved into the ancient store: nil placeholder
+	// entries are appended instead and dropped again by tail truncation, while
+	// any pre-existing ancient block data is removed in the background. Headers
+	// and canonical hashes are always retained.
+	pruneAncient bool
 
 	quit    chan struct{}
 	wg      sync.WaitGroup
@@ -58,12 +72,13 @@ type chainFreezer struct {
 //     state freezer (e.g. dev mode).
 //   - if non-empty directory is given, initializes the regular file-based
 //     state freezer.
-func newChainFreezer(datadir string, eraDir string, namespace string, readonly bool) (*chainFreezer, error) {
+func newChainFreezer(datadir string, eraDir string, namespace string, readonly bool, pruneAncient bool) (*chainFreezer, error) {
 	if datadir == "" {
 		return &chainFreezer{
-			ancients: NewMemoryFreezer(readonly, chainFreezerTableConfigs),
-			quit:     make(chan struct{}),
-			trigger:  make(chan chan struct{}),
+			ancients:     NewMemoryFreezer(readonly, chainFreezerTableConfigs),
+			pruneAncient: pruneAncient,
+			quit:         make(chan struct{}),
+			trigger:      make(chan chan struct{}),
 		}, nil
 	}
 	freezer, err := NewFreezer(datadir, namespace, readonly, freezerTableSize, chainFreezerTableConfigs)
@@ -75,10 +90,11 @@ func newChainFreezer(datadir string, eraDir string, namespace string, readonly b
 		return nil, err
 	}
 	return &chainFreezer{
-		ancients: freezer,
-		eradb:    edb,
-		quit:     make(chan struct{}),
-		trigger:  make(chan chan struct{}),
+		ancients:     freezer,
+		eradb:        edb,
+		pruneAncient: pruneAncient,
+		quit:         make(chan struct{}),
+		trigger:      make(chan chan struct{}),
 	}, nil
 }
 
@@ -139,6 +155,15 @@ func (f *chainFreezer) freezeThreshold(db ethdb.KeyValueReader) (uint64, error) 
 	if head > params.FullImmutabilityThreshold {
 		headLimit = head - params.FullImmutabilityThreshold
 	}
+	// In ancient pruning mode, block data is discarded once frozen. Ignore the
+	// finality signal, which may trail the head very closely, and always retain
+	// the most recent blocks in the key-value store as the serving window.
+	if f.pruneAncient {
+		if headLimit == 0 {
+			return 0, errors.New("freezing threshold is not available")
+		}
+		return headLimit, nil
+	}
 	if final == 0 && headLimit == 0 {
 		return 0, errors.New("freezing threshold is not available")
 	}
@@ -195,6 +220,12 @@ func (f *chainFreezer) freeze(db ethdb.KeyValueStore) {
 
 		// Short circuit if the blocks below threshold are already frozen.
 		if frozen != 0 && frozen-1 >= threshold {
+			// Even without new blocks to freeze, previously frozen block data
+			// (e.g. from before ancient pruning was enabled) might still be
+			// pending removal.
+			if f.pruneAncient {
+				f.pruneAncientHistory(db, threshold+1)
+			}
 			backoff = true
 			log.Debug("Ancient blocks frozen already", "threshold", threshold, "frozen", frozen)
 			continue
@@ -217,6 +248,14 @@ func (f *chainFreezer) freeze(db ethdb.KeyValueStore) {
 		// Batch of blocks have been frozen, flush them before wiping from key-value store
 		if err := f.SyncAncient(); err != nil {
 			log.Crit("Failed to flush frozen tables", "err", err)
+		}
+		// In ancient pruning mode, remove the placeholder entries appended by
+		// freezeRange along with the associated transaction index entries.
+		// This must happen before the key-value data is wiped below, as the
+		// bodies of the newly frozen blocks are needed to enumerate their
+		// transaction hashes.
+		if f.pruneAncient {
+			f.pruneAncientHistory(db, last+1)
 		}
 		// Wipe out all data from the active database
 		batch := db.NewBatch()
@@ -317,23 +356,30 @@ func (f *chainFreezer) freezeRange(nfdb *nofreezedb, number, limit uint64) (hash
 			if len(header) == 0 {
 				return fmt.Errorf("block header missing, can't freeze block %d", number)
 			}
-			body := ReadBodyRLP(nfdb, hash, number)
-			if len(body) == 0 {
-				return fmt.Errorf("block body missing, can't freeze block %d", number)
+			// In ancient pruning mode, block bodies, receipts and access lists
+			// are not moved into the ancient store. Nil placeholder entries are
+			// appended instead, keeping the table heads aligned; they are
+			// dropped right away by the subsequent tail truncation.
+			var body, receipts, bals []byte
+			if !f.pruneAncient {
+				body = ReadBodyRLP(nfdb, hash, number)
+				if len(body) == 0 {
+					return fmt.Errorf("block body missing, can't freeze block %d", number)
+				}
+				receipts = ReadReceiptsRLP(nfdb, hash, number)
+				if len(receipts) == 0 {
+					return fmt.Errorf("block receipts missing, can't freeze block %d", number)
+				}
+				// An empty block access list is allowed and may occur in multiple
+				// scenarios, such as:
+				//   - pre-Amsterdam blocks
+				//   - post-Amsterdam blocks with the BAL absent (e.g. pruned by network)
+				//   - post-Amsterdam blocks with an explicitly empty BAL
+				//
+				// In these cases, a nil entry will be stored in the BAL table as the
+				// absence placeholder.
+				bals = ReadAccessListRLP(nfdb, hash, number)
 			}
-			receipts := ReadReceiptsRLP(nfdb, hash, number)
-			if len(receipts) == 0 {
-				return fmt.Errorf("block receipts missing, can't freeze block %d", number)
-			}
-			// An empty block access list is allowed and may occur in multiple
-			// scenarios, such as:
-			//   - pre-Amsterdam blocks
-			//   - post-Amsterdam blocks with the BAL absent (e.g. pruned by network)
-			//   - post-Amsterdam blocks with an explicitly empty BAL
-			//
-			// In these cases, a nil entry will be stored in the BAL table as the
-			// absence placeholder.
-			bals := ReadAccessListRLP(nfdb, hash, number)
 
 			// Write to the batch.
 			if err := op.AppendRaw(ChainFreezerHashTable, number, hash[:]); err != nil {
@@ -356,6 +402,77 @@ func (f *chainFreezer) freezeRange(nfdb *nofreezedb, number, limit uint64) (hash
 		return nil
 	})
 	return hashes, err
+}
+
+// pruneAncientHistory removes the block bodies, receipts and access lists of
+// all frozen blocks below the given tail from the ancient store, along with
+// the transaction index entries referring to them. It's only invoked from the
+// freeze thread when ancient pruning mode is enabled.
+//
+// The removal is performed in bounded steps, persisting the progress via the
+// group tails and the transaction index tail, so an interrupted prune (e.g.
+// the initial removal of a large pre-existing ancient store) resumes where it
+// left off on the next cycle.
+func (f *chainFreezer) pruneAncientHistory(db ethdb.KeyValueStore, tail uint64) {
+	frozen, _ := f.Ancients() // no error will occur, safe to ignore
+	if tail > frozen {
+		tail = frozen
+	}
+	blockTail, err := f.Tail(ChainFreezerBlockDataGroup)
+	if err != nil {
+		return
+	}
+	balTail, err := f.Tail(ChainFreezerBALGroup)
+	if err != nil {
+		return
+	}
+	// Resume from the lowest group tail: the groups are truncated one after
+	// another below and may diverge if the process dies in between; the group
+	// which is already past a truncation mark short-circuits it internally.
+	prev := min(blockTail, balTail)
+	if prev >= tail {
+		return
+	}
+	var (
+		start = time.Now()
+		from  = prev
+		// The ancient-aware database view is needed by the transaction
+		// unindexer to read bodies which are still in the ancient store.
+		fulldb = &freezerdb{KeyValueStore: db, chainFreezer: f}
+	)
+	for prev < tail {
+		select {
+		case <-f.quit:
+			return
+		default:
+		}
+		next := min(prev+pruneAncientBatchLimit, tail)
+
+		// Remove the transaction index entries of the pruned blocks first,
+		// while their bodies are still accessible: the newly frozen range is
+		// still present in the key-value store at this point and older ranges
+		// remain readable from the ancient store until truncated below. Any
+		// dangling entries left behind by an untimely shutdown are purged by
+		// the transaction indexer on restart.
+		if txTail := ReadTxIndexTail(db); txTail != nil && *txTail < next {
+			UnindexTransactions(fulldb, *txTail, next, f.quit, false)
+			select {
+			case <-f.quit:
+				return // don't prune bodies the unindexer didn't get through
+			default:
+			}
+		}
+		if _, err := f.TruncateTail(ChainFreezerBlockDataGroup, next); err != nil {
+			log.Error("Failed to prune ancient block data", "tail", next, "err", err)
+			return
+		}
+		if _, err := f.TruncateTail(ChainFreezerBALGroup, next); err != nil {
+			log.Error("Failed to prune ancient block access lists", "tail", next, "err", err)
+			return
+		}
+		prev = next
+	}
+	log.Debug("Pruned ancient block data", "from", from, "tail", tail, "elapsed", common.PrettyDuration(time.Since(start)))
 }
 
 // Ancient retrieves an ancient binary blob from the append-only immutable files.

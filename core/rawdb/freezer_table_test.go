@@ -751,7 +751,8 @@ func TestTruncateTail(t *testing.T) {
 	expected = 20*3 + 24 - 20
 	assertTableSize(t, f, expected)
 
-	// truncate all, the entire freezer should be deleted
+	// truncate all, the entire table is reset and only the sentinel index
+	// entry is left behind
 	f.truncateTail(7)
 	checkRetrieveError(t, f, map[uint64]error{
 		0: errOutOfBounds,
@@ -762,7 +763,7 @@ func TestTruncateTail(t *testing.T) {
 		5: errOutOfBounds,
 		6: errOutOfBounds,
 	})
-	expected = 12
+	expected = 6
 	assertTableSize(t, f, expected)
 }
 

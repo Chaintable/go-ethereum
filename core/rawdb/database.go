@@ -223,6 +223,12 @@ type OpenOptions struct {
 	Era              string // era files directory
 	MetricsNamespace string // prefix added to freezer metric names
 	ReadOnly         bool
+
+	// PruneAncient enables continuous pruning of historical block data. Block
+	// bodies, receipts and access lists are no longer moved into the ancient
+	// store once frozen and pre-existing ancient block data is removed in the
+	// background. Headers and canonical hashes are always retained.
+	PruneAncient bool
 }
 
 // Open creates a high-level database wrapper for the given key-value store.
@@ -234,7 +240,7 @@ func Open(db ethdb.KeyValueStore, opts OpenOptions) (ethdb.Database, error) {
 	if chainFreezerDir != "" {
 		chainFreezerDir = resolveChainFreezerDir(chainFreezerDir)
 	}
-	frdb, err := newChainFreezer(chainFreezerDir, opts.Era, opts.MetricsNamespace, opts.ReadOnly)
+	frdb, err := newChainFreezer(chainFreezerDir, opts.Era, opts.MetricsNamespace, opts.ReadOnly, opts.PruneAncient)
 	if err != nil {
 		printChainMetadata(db)
 		return nil, err
