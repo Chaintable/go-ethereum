@@ -187,3 +187,75 @@ func TestChainFreezerPruneAncientLegacy(t *testing.T) {
 		t.Fatalf("unexpected tx index tail, got %v, want %d", txTail, 51)
 	}
 }
+
+// TestChainFreezerPruneAncientDisable checks that a database produced by a
+// node with ancient pruning enabled remains fully usable after the mode is
+// disabled again: freezing resumes with real block data appended right after
+// the pruned region, whose boundary stays put.
+func TestChainFreezerPruneAncientDisable(t *testing.T) {
+	var (
+		kvdb    = memorydb.New()
+		ancient = t.TempDir()
+	)
+	// Phase 1: run the freezer with pruning enabled, blocks [0, 50] are
+	// frozen as placeholders and their block data is dropped.
+	rawDb, err := Open(kvdb, OpenOptions{Ancient: ancient, PruneAncient: true})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	db := rawDb.(*freezerdb)
+
+	headers := writeTestChainSegment(db, 0, 70)
+	writeTestHeadBlock(db, uint64(params.FullImmutabilityThreshold+50))
+	WriteTxIndexTail(db, 0)
+
+	if err := db.Freeze(); err != nil {
+		t.Fatalf("failed to trigger freeze cycle: %v", err)
+	}
+	if tail, _ := db.Tail(ChainFreezerBlockDataGroup); tail != 51 {
+		t.Fatalf("unexpected block data tail, got %d, want %d", tail, 51)
+	}
+	if err := db.chainFreezer.Close(); err != nil {
+		t.Fatalf("failed to close chain freezer: %v", err)
+	}
+
+	// Phase 2: reopen the database with pruning disabled and advance the
+	// head, so blocks [51, 60] become eligible for freezing.
+	rawDb, err = Open(kvdb, OpenOptions{Ancient: ancient})
+	if err != nil {
+		t.Fatalf("failed to reopen database: %v", err)
+	}
+	db = rawDb.(*freezerdb)
+	defer db.Close()
+
+	writeTestHeadBlock(db, uint64(params.FullImmutabilityThreshold+60))
+	if err := db.Freeze(); err != nil {
+		t.Fatalf("failed to trigger freeze cycle: %v", err)
+	}
+	if frozen, _ := db.Ancients(); frozen != 61 {
+		t.Fatalf("unexpected number of frozen items, got %d, want %d", frozen, 61)
+	}
+	// The pruned boundary must stay put, with the previously pruned range
+	// still unavailable.
+	if tail, _ := db.Tail(ChainFreezerBlockDataGroup); tail != 51 {
+		t.Fatalf("unexpected block data tail, got %d, want %d", tail, 51)
+	}
+	for _, number := range []uint64{1, 25, 50} {
+		if blob := ReadBodyRLP(db, headers[number].Hash(), number); len(blob) != 0 {
+			t.Fatalf("body %d resurrected after disabling pruning", number)
+		}
+	}
+	// The newly frozen range must carry real block data again.
+	for _, number := range []uint64{51, 55, 60} {
+		hash := headers[number].Hash()
+		if blob, err := db.Ancient(ChainFreezerBodiesTable, number); err != nil || len(blob) == 0 {
+			t.Fatalf("body %d missing from ancient store after disabling pruning: %v", number, err)
+		}
+		if blob := ReadBodyRLP(db, hash, number); len(blob) == 0 {
+			t.Fatalf("body %d unreadable after disabling pruning", number)
+		}
+		if blob := ReadReceiptsRLP(db, hash, number); len(blob) == 0 {
+			t.Fatalf("receipts %d unreadable after disabling pruning", number)
+		}
+	}
+}
