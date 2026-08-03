@@ -239,6 +239,16 @@ func (f *chainFreezer) freeze(db ethdb.KeyValueStore) {
 		if last-first+1 > freezerBatchLimit {
 			last = freezerBatchLimit + first - 1
 		}
+		// In ancient pruning mode, remove the transaction index entries of the
+		// scheduled blocks before freezing them. Once frozen, only their nil
+		// placeholders remain after the key-value data is wiped below, so an
+		// index entry surviving past this point could never be unindexed again.
+		// Abort the cycle if the removal was interrupted; the untouched blocks
+		// are rescheduled in the next cycle.
+		if f.pruneAncient && !f.unindexBeforeFreeze(db, last+1) {
+			backoff = true
+			continue
+		}
 		ancients, err := f.freezeRange(nfdb, first, last)
 		if err != nil {
 			log.Error("Error in block freeze operation", "err", err)
@@ -249,11 +259,9 @@ func (f *chainFreezer) freeze(db ethdb.KeyValueStore) {
 		if err := f.SyncAncient(); err != nil {
 			log.Crit("Failed to flush frozen tables", "err", err)
 		}
-		// In ancient pruning mode, remove the placeholder entries appended by
-		// freezeRange along with the associated transaction index entries.
-		// This must happen before the key-value data is wiped below, as the
-		// bodies of the newly frozen blocks are needed to enumerate their
-		// transaction hashes.
+		// In ancient pruning mode, drop the freshly appended placeholder
+		// entries again by advancing the group tails. The transaction index
+		// entries of the frozen blocks have already been removed above.
 		if f.pruneAncient {
 			f.pruneAncientHistory(db, last+1)
 		}
@@ -404,10 +412,32 @@ func (f *chainFreezer) freezeRange(nfdb *nofreezedb, number, limit uint64) (hash
 	return hashes, err
 }
 
+// unindexBeforeFreeze removes the transaction index entries of all blocks
+// below the given boundary, ahead of their block data being dropped by the
+// ancient pruning mode. It reports whether the index tail has reached the
+// boundary. Freezing must not proceed otherwise: the bodies required for
+// enumerating the transaction hashes become unavailable once the blocks are
+// frozen as placeholders and wiped from the key-value store, which would
+// leave permanently dangling index entries behind.
+func (f *chainFreezer) unindexBeforeFreeze(db ethdb.KeyValueStore, boundary uint64) bool {
+	txTail := ReadTxIndexTail(db)
+	if txTail == nil || *txTail >= boundary {
+		return true
+	}
+	// The ancient-aware database view is needed to read the bodies of blocks
+	// which have already been frozen with their data intact (e.g. before the
+	// pruning mode was enabled).
+	fulldb := &freezerdb{KeyValueStore: db, chainFreezer: f}
+	UnindexTransactions(fulldb, *txTail, boundary, f.quit, false)
+
+	txTail = ReadTxIndexTail(db)
+	return txTail != nil && *txTail >= boundary
+}
+
 // pruneAncientHistory removes the block bodies, receipts and access lists of
 // all frozen blocks below the given tail from the ancient store, along with
-// the transaction index entries referring to them. It's only invoked from the
-// freeze thread when ancient pruning mode is enabled.
+// any transaction index entries still referring to them. It's only invoked
+// from the freeze thread when ancient pruning mode is enabled.
 //
 // The removal is performed in bounded steps, persisting the progress via the
 // group tails and the transaction index tail, so an interrupted prune (e.g.
@@ -448,12 +478,12 @@ func (f *chainFreezer) pruneAncientHistory(db ethdb.KeyValueStore, tail uint64) 
 		}
 		next := min(prev+pruneAncientBatchLimit, tail)
 
-		// Remove the transaction index entries of the pruned blocks first,
-		// while their bodies are still accessible: the newly frozen range is
-		// still present in the key-value store at this point and older ranges
-		// remain readable from the ancient store until truncated below. Any
-		// dangling entries left behind by an untimely shutdown are purged by
-		// the transaction indexer on restart.
+		// Remove any transaction index entries still referring to the pruned
+		// blocks, while their bodies remain readable from the ancient store
+		// until truncated below. This only concerns blocks frozen with their
+		// data intact (e.g. before the pruning mode was enabled): for blocks
+		// frozen by the pruning mode itself, the index entries have already
+		// been removed ahead of freezing.
 		if txTail := ReadTxIndexTail(db); txTail != nil && *txTail < next {
 			UnindexTransactions(fulldb, *txTail, next, f.quit, false)
 			select {
