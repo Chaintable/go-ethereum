@@ -101,7 +101,7 @@ type Config struct {
 	// bodies and receipts are dropped once they age out of the most recent
 	// 90000 blocks and pre-existing ancient block data is removed in the
 	// background. Headers and canonical hashes are always retained. Requires
-	// HistoryMode to be "all".
+	// HistoryMode to be "all" and full sync mode.
 	PruneAncient bool `toml:",omitempty"`
 
 	// This can be set to list of enrtree:// URLs which will be queried for

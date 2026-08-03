@@ -419,6 +419,12 @@ func (f *chainFreezer) freezeRange(nfdb *nofreezedb, number, limit uint64) (hash
 // enumerating the transaction hashes become unavailable once the blocks are
 // frozen as placeholders and wiped from the key-value store, which would
 // leave permanently dangling index entries behind.
+// Note: the check reflects the indexer's progress at this instant. With the
+// transaction index retention capped at the block data retention window, the
+// indexer never writes entries at or below the freezing threshold, except
+// during the initial index construction (no index tail persisted yet) racing
+// a chain head advance, where a handful of entries around the boundary may
+// end up permanently dangling. Lookups of those return null gracefully.
 func (f *chainFreezer) unindexBeforeFreeze(db ethdb.KeyValueStore, boundary uint64) bool {
 	txTail := ReadTxIndexTail(db)
 	if txTail == nil || *txTail >= boundary {

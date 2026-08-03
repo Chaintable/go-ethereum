@@ -20,6 +20,7 @@ package eth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -147,6 +148,13 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if config.PruneAncient {
 		if config.HistoryMode != history.KeepAll {
 			return nil, fmt.Errorf("ancient pruning is incompatible with history mode %q", config.HistoryMode.String())
+		}
+		// Reject sync modes which write historical block data directly into
+		// the ancient store (snap sync), bypassing the pruning logic in the
+		// freezer: a freshly syncing node would otherwise download and stage
+		// the entire block history before background pruning catches up.
+		if config.SyncMode != ethconfig.FullSync {
+			return nil, errors.New("ancient pruning requires --syncmode full")
 		}
 		// Cap the transaction index retention to the block data retention
 		// window: index entries beyond it would reference bodies that no

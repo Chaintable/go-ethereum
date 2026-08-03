@@ -341,7 +341,7 @@ var (
 	}
 	AncientPruneFlag = &cli.BoolFlag{
 		Name:     "ancient.prune",
-		Usage:    "Continuously prune historical block data: bodies and receipts are dropped once they age out of the most recent 90000 blocks, and pre-existing ancient block data is removed in the background (headers are always retained)",
+		Usage:    "Continuously prune historical block data: bodies and receipts are dropped once they age out of the most recent 90000 blocks, and pre-existing ancient block data is removed in the background (headers are always retained, requires --syncmode full)",
 		Category: flags.StateCategory,
 	}
 	LogHistoryFlag = &cli.Uint64Flag{
