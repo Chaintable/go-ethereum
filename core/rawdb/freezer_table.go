@@ -719,6 +719,15 @@ func (t *freezerTable) truncateTail(items uint64) error {
 	if t.items.Load() < items {
 		return t.resetTo(items)
 	}
+	// If the truncation hides everything stored in the table, reset it
+	// entirely instead of just marking the items as hidden. Data files at
+	// or after the new tail position can never be dropped by the logic
+	// below, so a table whose tail permanently chases its head (e.g. with
+	// ancient pruning enabled) would otherwise retain its trailing data
+	// file and an ever-growing index file forever.
+	if t.items.Load() == items {
+		return t.resetTo(items)
+	}
 	// Load the new tail index by the given new tail position
 	var (
 		newTailId uint32
@@ -841,12 +850,18 @@ func (t *freezerTable) truncateTail(items uint64) error {
 }
 
 // resetTo clears the entire table and sets both the head and tail to the given
-// value. It assumes the caller holds the lock and that tail > t.items.
+// value. It assumes the caller holds the lock and that tail >= t.items.
 func (t *freezerTable) resetTo(tail uint64) error {
+	// Save the old size for size gauge tracking. The gauge is shared across
+	// all tables of the freezer, so only the size of this table may be
+	// deducted from it.
+	oldSize, err := t.sizeNolock()
+	if err != nil {
+		return err
+	}
 	// Sync the entire table before resetting, eliminating the potential
 	// data corruption.
-	err := t.doSync()
-	if err != nil {
+	if err := t.doSync(); err != nil {
 		return err
 	}
 	// Update the index file to reflect the new offset
@@ -888,8 +903,13 @@ func (t *freezerTable) resetTo(tail uint64) error {
 	t.items.Store(tail)
 	t.itemOffset.Store(tail)
 	t.itemHidden.Store(tail)
-	t.sizeGauge.Update(0)
 
+	// Retrieve the new size and update the total size counter
+	newSize, err := t.sizeNolock()
+	if err != nil {
+		return err
+	}
+	t.sizeGauge.Dec(int64(oldSize - newSize))
 	return nil
 }
 

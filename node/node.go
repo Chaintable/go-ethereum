@@ -705,6 +705,7 @@ func (n *Node) OpenDatabaseWithOptions(name string, opt DatabaseOptions) (ethdb.
 		db, _ = rawdb.Open(memorydb.New(), rawdb.OpenOptions{
 			MetricsNamespace: opt.MetricsNamespace,
 			ReadOnly:         opt.ReadOnly,
+			PruneAncient:     opt.PruneAncient,
 		})
 	} else {
 		opt.AncientsDirectory = n.ResolveAncient(name, opt.AncientsDirectory)

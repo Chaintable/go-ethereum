@@ -507,6 +507,13 @@ func (bc *BlockChain) StateIndexProgress() (uint64, uint64, error) {
 // HistoryPruningCutoff returns the configured history pruning point.
 // Blocks before this might not be available in the database.
 func (bc *BlockChain) HistoryPruningCutoff() (uint64, common.Hash) {
+	// In ancient pruning mode the boundary advances continuously with the
+	// chain head, report the live freezer tail instead of a static point.
+	if bc.cfg.PruneAncient {
+		if tail, err := bc.db.Tail(rawdb.ChainFreezerBlockDataGroup); err == nil && tail > 0 {
+			return tail, bc.GetCanonicalHash(tail)
+		}
+	}
 	pt := bc.historyPrunePoint.Load()
 	if pt == nil {
 		return 0, bc.genesisBlock.Hash()

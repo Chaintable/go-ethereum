@@ -339,6 +339,11 @@ var (
 		Value:    ethconfig.Defaults.HistoryMode.String(),
 		Category: flags.StateCategory,
 	}
+	AncientPruneFlag = &cli.BoolFlag{
+		Name:     "ancient.prune",
+		Usage:    "Continuously prune historical block data: bodies and receipts are dropped once they age out of the most recent 90000 blocks, and pre-existing ancient block data is removed in the background (headers are always retained, requires --syncmode full)",
+		Category: flags.StateCategory,
+	}
 	LogHistoryFlag = &cli.Uint64Flag{
 		Name:     "history.logs",
 		Usage:    "Number of recent blocks to maintain log search index for (default = about one year, 0 = entire chain)",
@@ -1762,6 +1767,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		if err := cfg.HistoryMode.UnmarshalText([]byte(value)); err != nil {
 			Fatalf("--%s: %v", ChainHistoryFlag.Name, err)
 		}
+	}
+	if ctx.IsSet(AncientPruneFlag.Name) {
+		cfg.PruneAncient = ctx.Bool(AncientPruneFlag.Name)
 	}
 
 	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheDatabaseFlag.Name) {

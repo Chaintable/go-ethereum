@@ -207,6 +207,13 @@ type BlockChainConfig struct {
 	// HistoryPolicy defines the chain history pruning intent.
 	HistoryPolicy history.HistoryPolicy
 
+	// PruneAncient indicates that historical block data (bodies, receipts and
+	// access lists) is continuously pruned from the database, with only the
+	// most recent blocks retained in the key-value store as the serving
+	// window. Headers and canonical hashes are always kept. The history
+	// pruning cutoff advances with the chain head in this mode.
+	PruneAncient bool
+
 	// Misc options
 	NoPrefetch bool            // Whether to disable heuristic state prefetching when processing blocks
 	Overrides  *ChainOverrides // Optional chain config overrides

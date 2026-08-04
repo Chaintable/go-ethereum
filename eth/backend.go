@@ -20,6 +20,7 @@ package eth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -144,6 +145,25 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if !config.HistoryMode.IsValid() {
 		return nil, fmt.Errorf("invalid history mode %d", config.HistoryMode)
 	}
+	if config.PruneAncient {
+		if config.HistoryMode != history.KeepAll {
+			return nil, fmt.Errorf("ancient pruning is incompatible with history mode %q", config.HistoryMode.String())
+		}
+		// Reject sync modes which write historical block data directly into
+		// the ancient store (snap sync), bypassing the pruning logic in the
+		// freezer: a freshly syncing node would otherwise download and stage
+		// the entire block history before background pruning catches up.
+		if config.SyncMode != ethconfig.FullSync {
+			return nil, errors.New("ancient pruning requires --syncmode full")
+		}
+		// Cap the transaction index retention to the block data retention
+		// window: index entries beyond it would reference bodies that no
+		// longer exist locally.
+		if config.TransactionHistory == 0 || config.TransactionHistory > params.FullImmutabilityThreshold {
+			log.Warn("Capping transaction history in ancient pruning mode", "provided", config.TransactionHistory, "updated", params.FullImmutabilityThreshold)
+			config.TransactionHistory = params.FullImmutabilityThreshold
+		}
+	}
 	if config.Miner.GasPrice == nil || config.Miner.GasPrice.Sign() <= 0 {
 		log.Warn("Sanitizing invalid miner gas price", "provided", config.Miner.GasPrice, "updated", ethconfig.Defaults.Miner.GasPrice)
 		config.Miner.GasPrice = new(big.Int).Set(ethconfig.Defaults.Miner.GasPrice)
@@ -165,6 +185,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		AncientsDirectory: config.DatabaseFreezer,
 		EraDirectory:      config.DatabaseEra,
 		MetricsNamespace:  "eth/db/chaindata/",
+		PruneAncient:      config.PruneAncient,
 	}
 	chainDb, err := stack.OpenDatabaseWithOptions("chaindata", dbOptions)
 	if err != nil {
@@ -248,6 +269,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			BinTrieGroupDepth:       config.BinTrieGroupDepth,
 			StateScheme:             scheme,
 			HistoryPolicy:           histPolicy,
+			PruneAncient:            config.PruneAncient,
 			TxLookupLimit:           int64(min(config.TransactionHistory, math.MaxInt64)),
 			VmConfig: vm.Config{
 				EnablePreimageRecording: config.EnablePreimageRecording,
