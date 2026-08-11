@@ -7,7 +7,6 @@ import (
 
 	ptypes "github.com/Chaintable/pipeline/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 const (
@@ -79,15 +78,6 @@ func (bc *BlockChain) MarkBlockFirstSeen(hash common.Hash, seenAt time.Time) {
 
 func (bc *BlockChain) firstSeenAt(hash common.Hash) (time.Time, bool) {
 	return bc.blockFirstSeen.get(hash, time.Now())
-}
-
-func (bc *BlockChain) pipelineBlockContext(header *types.Header) ptypes.BlockContext {
-	return ptypes.BlockContext{
-		BlockNumber: header.Number.Uint64(),
-		Hash:        header.Hash(),
-		ParentHash:  header.ParentHash,
-		Timestamp:   header.Time,
-	}
 }
 
 func (bc *BlockChain) pipelineBlockFirstSeenAt(blocks []ptypes.BlockContext) map[common.Hash]int64 {

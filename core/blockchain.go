@@ -1802,7 +1802,12 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 		if headerb == nil {
 			log.Crit("Failed to get header by hash", "hash", blockb.ParentHash)
 		} else {
-			blockb = bc.pipelineBlockContext(headerb)
+			blockb = ptypes.BlockContext{
+				BlockNumber: headerb.Number.Uint64(),
+				Hash:        headerb.Hash(),
+				ParentHash:  headerb.ParentHash,
+				Timestamp:   headerb.Time,
+			}
 		}
 	}
 	for blocka.Hash != blockb.Hash {
@@ -1811,7 +1816,12 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 		if headera == nil {
 			log.Crit("Failed to get header by hash", "hash", blocka.ParentHash)
 		} else {
-			blocka = bc.pipelineBlockContext(headera)
+			blocka = ptypes.BlockContext{
+				BlockNumber: headera.Number.Uint64(),
+				Hash:        headera.Hash(),
+				ParentHash:  headera.ParentHash,
+				Timestamp:   headera.Time,
+			}
 		}
 
 		chainB = append(chainB, blockb)
@@ -1819,7 +1829,12 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 		if headerb == nil {
 			log.Crit("Failed to get header by hash", "hash", blockb.ParentHash)
 		} else {
-			blockb = bc.pipelineBlockContext(headerb)
+			blockb = ptypes.BlockContext{
+				BlockNumber: headerb.Number.Uint64(),
+				Hash:        headerb.Hash(),
+				ParentHash:  headerb.ParentHash,
+				Timestamp:   headerb.Time,
+			}
 		}
 	}
 	// now blocka == blockb == ancestor
@@ -1859,7 +1874,12 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 		leader.GlobalManager.RUnlock()
 
 		if tracer.NodeXPusher != nil && isLeader && lastPushedBlock.BlockNumber <= block.NumberU64() {
-			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, bc.pipelineBlockContext(block.Header()))
+			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
+				BlockNumber: block.NumberU64(),
+				Hash:        block.Hash(),
+				ParentHash:  block.ParentHash(),
+				Timestamp:   block.Time(),
+			})
 			var blockChange *ptypes.BlockChangeNotification
 			if len(dropBlocks) > 0 {
 				blockChange = &ptypes.BlockChangeNotification{
@@ -2903,7 +2923,12 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 		leader.GlobalManager.RUnlock()
 
 		if tracer.NodeXPusher != nil && isLeader && lastPushedBlock.BlockNumber <= head.NumberU64() {
-			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, bc.pipelineBlockContext(head.Header()))
+			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
+				BlockNumber: head.NumberU64(),
+				Hash:        head.Hash(),
+				ParentHash:  head.ParentHash(),
+				Timestamp:   head.Time(),
+			})
 			var blockChange *ptypes.BlockChangeNotification
 			if len(dropBlocks) > 0 {
 				blockChange = &ptypes.BlockChangeNotification{
