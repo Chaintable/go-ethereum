@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	ptypes "github.com/Chaintable/pipeline/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -36,7 +37,7 @@ func TestBlockFirstSeenTrackerExpiresOldObservations(t *testing.T) {
 	}
 }
 
-func TestPipelineBlockContextIncludesFirstSeenTiming(t *testing.T) {
+func TestPipelineBlockFirstSeenAt(t *testing.T) {
 	bc := new(BlockChain)
 	header := &types.Header{
 		Number:     big.NewInt(12),
@@ -46,8 +47,15 @@ func TestPipelineBlockContextIncludesFirstSeenTiming(t *testing.T) {
 	firstSeen := time.Now().Add(-time.Second).Truncate(time.Millisecond)
 	bc.MarkBlockFirstSeen(header.Hash(), firstSeen)
 
-	block := bc.pipelineBlockContext(header)
-	if block.FirstSeenAtUnixMilli != firstSeen.UnixMilli() {
-		t.Fatalf("FirstSeenAtUnixMilli = %d, want %d", block.FirstSeenAtUnixMilli, firstSeen.UnixMilli())
+	blocks := []ptypes.BlockContext{
+		bc.pipelineBlockContext(header),
+		{Hash: common.HexToHash("0x02")},
+	}
+	got := bc.pipelineBlockFirstSeenAt(blocks)
+	if got[header.Hash()] != firstSeen.UnixMilli() {
+		t.Fatalf("first-seen timing = %d, want %d", got[header.Hash()], firstSeen.UnixMilli())
+	}
+	if _, ok := got[blocks[1].Hash]; ok {
+		t.Fatal("missing first-seen timing was included")
 	}
 }

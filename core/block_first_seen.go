@@ -82,14 +82,23 @@ func (bc *BlockChain) firstSeenAt(hash common.Hash) (time.Time, bool) {
 }
 
 func (bc *BlockChain) pipelineBlockContext(header *types.Header) ptypes.BlockContext {
-	block := ptypes.BlockContext{
+	return ptypes.BlockContext{
 		BlockNumber: header.Number.Uint64(),
 		Hash:        header.Hash(),
 		ParentHash:  header.ParentHash,
 		Timestamp:   header.Time,
 	}
-	if seenAt, ok := bc.firstSeenAt(block.Hash); ok {
-		block.FirstSeenAtUnixMilli = seenAt.UnixMilli()
+}
+
+func (bc *BlockChain) pipelineBlockFirstSeenAt(blocks []ptypes.BlockContext) map[common.Hash]int64 {
+	firstSeenAt := make(map[common.Hash]int64)
+	for _, block := range blocks {
+		if seenAt, ok := bc.firstSeenAt(block.Hash); ok {
+			firstSeenAt[block.Hash] = seenAt.UnixMilli()
+		}
 	}
-	return block
+	if len(firstSeenAt) == 0 {
+		return nil
+	}
+	return firstSeenAt
 }
