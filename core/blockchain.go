@@ -355,6 +355,7 @@ type BlockChain struct {
 	blockProcCounter int32
 	scope            event.SubscriptionScope
 	genesisBlock     *types.Block
+	blockFirstSeen   blockFirstSeenTracker
 
 	// This mutex synchronizes chain write operations.
 	// Readers don't need to take it, they can just read the database.
@@ -1801,12 +1802,7 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 		if headerb == nil {
 			log.Crit("Failed to get header by hash", "hash", blockb.ParentHash)
 		} else {
-			blockb = ptypes.BlockContext{
-				BlockNumber: headerb.Number.Uint64(),
-				Hash:        headerb.Hash(),
-				ParentHash:  headerb.ParentHash,
-				Timestamp:   headerb.Time,
-			}
+			blockb = bc.pipelineBlockContext(headerb)
 		}
 	}
 	for blocka.Hash != blockb.Hash {
@@ -1815,12 +1811,7 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 		if headera == nil {
 			log.Crit("Failed to get header by hash", "hash", blocka.ParentHash)
 		} else {
-			blocka = ptypes.BlockContext{
-				BlockNumber: headera.Number.Uint64(),
-				Hash:        headera.Hash(),
-				ParentHash:  headera.ParentHash,
-				Timestamp:   headera.Time,
-			}
+			blocka = bc.pipelineBlockContext(headera)
 		}
 
 		chainB = append(chainB, blockb)
@@ -1828,12 +1819,7 @@ func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptype
 		if headerb == nil {
 			log.Crit("Failed to get header by hash", "hash", blockb.ParentHash)
 		} else {
-			blockb = ptypes.BlockContext{
-				BlockNumber: headerb.Number.Uint64(),
-				Hash:        headerb.Hash(),
-				ParentHash:  headerb.ParentHash,
-				Timestamp:   headerb.Time,
-			}
+			blockb = bc.pipelineBlockContext(headerb)
 		}
 	}
 	// now blocka == blockb == ancestor
@@ -1873,12 +1859,7 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 		leader.GlobalManager.RUnlock()
 
 		if tracer.NodeXPusher != nil && isLeader && lastPushedBlock.BlockNumber <= block.NumberU64() {
-			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
-				BlockNumber: block.NumberU64(),
-				Hash:        block.Hash(),
-				ParentHash:  block.ParentHash(),
-				Timestamp:   block.Time(),
-			})
+			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, bc.pipelineBlockContext(block.Header()))
 			var blockChange *ptypes.BlockChangeNotification
 			if len(dropBlocks) > 0 {
 				blockChange = &ptypes.BlockChangeNotification{
@@ -1952,6 +1933,10 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 			return 0, fmt.Errorf("non contiguous insert: item %d is #%d [%x..], item %d is #%d [%x..] (parent [%x..])", i-1, prev.NumberU64(),
 				prev.Hash().Bytes()[:4], i, block.NumberU64(), block.Hash().Bytes()[:4], block.ParentHash().Bytes()[:4])
 		}
+	}
+	seenAt := time.Now()
+	for _, block := range chain {
+		bc.MarkBlockFirstSeen(block.Hash(), seenAt)
 	}
 	// Pre-checks passed, start the full block imports
 	if !bc.chainmu.TryLock() {
@@ -2875,6 +2860,7 @@ func (bc *BlockChain) reorg(oldHead *types.Header, newHead *types.Header) error 
 func (bc *BlockChain) InsertBlockWithoutSetHead(ctx context.Context, block *types.Block, makeWitness bool) (witness *stateless.Witness, err error) {
 	_, _, spanEnd := telemetry.StartSpan(ctx, "core.blockchain.InsertBlockWithoutSetHead")
 	defer spanEnd(&err)
+	bc.MarkBlockFirstSeen(block.Hash(), time.Now())
 	if !bc.chainmu.TryLock() {
 		return nil, errChainStopped
 	}
@@ -2888,6 +2874,7 @@ func (bc *BlockChain) InsertBlockWithoutSetHead(ctx context.Context, block *type
 // block. It's possible that the state of the new head is missing, and it will
 // be recovered in this function as well.
 func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
+	bc.MarkBlockFirstSeen(head.Hash(), time.Now())
 	if !bc.chainmu.TryLock() {
 		return common.Hash{}, errChainStopped
 	}
@@ -2916,12 +2903,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 		leader.GlobalManager.RUnlock()
 
 		if tracer.NodeXPusher != nil && isLeader && lastPushedBlock.BlockNumber <= head.NumberU64() {
-			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
-				BlockNumber: head.NumberU64(),
-				Hash:        head.Hash(),
-				ParentHash:  head.ParentHash(),
-				Timestamp:   head.Time(),
-			})
+			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, bc.pipelineBlockContext(head.Header()))
 			var blockChange *ptypes.BlockChangeNotification
 			if len(dropBlocks) > 0 {
 				blockChange = &ptypes.BlockChangeNotification{

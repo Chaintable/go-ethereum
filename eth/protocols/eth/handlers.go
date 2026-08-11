@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -346,6 +347,7 @@ func serviceGetReceiptsQuery70(chain *core.BlockChain, query GetReceiptsRequest,
 }
 
 func handleBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
+	receivedAt := time.Now()
 	// A batch of headers arrived to one of our previous requests
 	res := new(BlockHeadersPacket)
 	if err := msg.Decode(res); err != nil {
@@ -358,6 +360,9 @@ func handleBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 	headers, err := res.List.Items()
 	if err != nil {
 		return fmt.Errorf("BlockHeaders: %w", err)
+	}
+	for _, header := range headers {
+		backend.Chain().MarkBlockFirstSeen(header.Hash(), receivedAt)
 	}
 
 	metadata := func() interface{} {
