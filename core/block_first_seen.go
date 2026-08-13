@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	blockFirstSeenTTL        = 24 * time.Hour
-	blockFirstSeenMaxEntries = 65536
+	blockFirstSeenTTL        = time.Hour
+	blockFirstSeenMaxEntries = 8192
 )
 
 type blockFirstSeenEntry struct {
