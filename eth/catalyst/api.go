@@ -837,6 +837,7 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	}
 	ctx, _, spanEnd := telemetry.StartSpan(ctx, "engine.newPayload", attrs...)
 	defer spanEnd(&err)
+	api.eth.BlockChain().MarkBlockFirstSeen(params.BlockHash, time.Now())
 	api.newPayloadLock.Lock()
 	defer api.newPayloadLock.Unlock()
 

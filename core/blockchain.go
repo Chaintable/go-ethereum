@@ -355,6 +355,7 @@ type BlockChain struct {
 	blockProcCounter int32
 	scope            event.SubscriptionScope
 	genesisBlock     *types.Block
+	blockFirstSeen   blockFirstSeenTracker
 
 	// This mutex synchronizes chain write operations.
 	// Readers don't need to take it, they can just read the database.
@@ -1900,7 +1901,7 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 			}
 
 			if blockChange != nil {
-				err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange)
+				err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange, bc.pipelineBlockFirstSeenAt(blockChange.NewBlocks))
 				if err != nil {
 					log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
 				}
@@ -1952,6 +1953,10 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 			return 0, fmt.Errorf("non contiguous insert: item %d is #%d [%x..], item %d is #%d [%x..] (parent [%x..])", i-1, prev.NumberU64(),
 				prev.Hash().Bytes()[:4], i, block.NumberU64(), block.Hash().Bytes()[:4], block.ParentHash().Bytes()[:4])
 		}
+	}
+	seenAt := time.Now()
+	for _, block := range chain {
+		bc.MarkBlockFirstSeen(block.Hash(), seenAt)
 	}
 	// Pre-checks passed, start the full block imports
 	if !bc.chainmu.TryLock() {
@@ -2875,6 +2880,7 @@ func (bc *BlockChain) reorg(oldHead *types.Header, newHead *types.Header) error 
 func (bc *BlockChain) InsertBlockWithoutSetHead(ctx context.Context, block *types.Block, makeWitness bool) (witness *stateless.Witness, err error) {
 	_, _, spanEnd := telemetry.StartSpan(ctx, "core.blockchain.InsertBlockWithoutSetHead")
 	defer spanEnd(&err)
+	bc.MarkBlockFirstSeen(block.Hash(), time.Now())
 	if !bc.chainmu.TryLock() {
 		return nil, errChainStopped
 	}
@@ -2888,6 +2894,7 @@ func (bc *BlockChain) InsertBlockWithoutSetHead(ctx context.Context, block *type
 // block. It's possible that the state of the new head is missing, and it will
 // be recovered in this function as well.
 func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
+	bc.MarkBlockFirstSeen(head.Hash(), time.Now())
 	if !bc.chainmu.TryLock() {
 		return common.Hash{}, errChainStopped
 	}
@@ -2944,7 +2951,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 			}
 
 			if blockChange != nil {
-				err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange)
+				err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange, bc.pipelineBlockFirstSeenAt(blockChange.NewBlocks))
 				if err != nil {
 					log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
 				}
