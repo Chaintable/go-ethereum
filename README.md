@@ -21,9 +21,9 @@ Chaintable write node (this repo · producer, embeds pipeline tracer)
 
 ## Go Ethereum (DeBank Modified Version)
 
-This is a modified version of [go-ethereum](https://github.com/ethereum/go-ethereum) (based on v1.16.7) to support [leafage-evm](https://github.com/Chaintable/leafage-evm) - a lightweight EVM executor for state queries.
+This is a modified version of [go-ethereum](https://github.com/ethereum/go-ethereum) (currently merged up to upstream v1.17.4) to support [leafage-evm](https://github.com/Chaintable/leafage-evm) - a lightweight EVM executor for state queries.
 
-### Key Modifications (vs v1.16.7)
+### Key Modifications (vs upstream)
 
 #### 1. `trace_debankBlock` RPC API
 
@@ -51,18 +51,26 @@ A real-time tracer that hooks into block processing and uploads data to Kafka + 
 
 **Enable via CLI:**
 ```bash
-geth --vmtrace pipeline --vmtrace.jsonconfig '{"kafka_brokers":"...", "s3_bucket":"..."}'
+geth --vmtrace pipeline --vmtrace.jsonconfig '{
+  "region": "ap-northeast-1",
+  "node_x_bucket": "<internal-bucket>",
+  "chain_table_bucket": "<external-bucket>",
+  "brokers": ["kafka-1:9092"],
+  "etcd_endpoints": ["http://etcd:2379"]
+}'
 ```
 
 #### 3. Core Modifications
 
 | File | Changes |
 |------|---------|
-| `core/blockchain.go` | Added hooks for genesis block, block commit, and balance change tracking |
-| `core/state/statedb.go` | Added `StateDiff()` method to export state changes |
-| `core/tracing/hooks.go` | Extended with `OnGenesisBlock`, `OnCommit`, `OnBlockDBStart` hooks |
-| `eth/backend.go` | Registered `trace` namespace for DeBank API |
-| `params/version.go` | Added version tracking for DeBank releases |
+| `core/tracing/hooks.go` | Added the `OnCommit` and `OnBlockDBStart` hook types |
+| `core/blockchain.go` | Dispatches the new hooks; computes the reorg and publishes the Kafka notification when the canonical head is set |
+| `core/state/statedb.go` | Added `StateDiff()` to export the committed state changes |
+| `eth/api_debank.go` | `DebankAPI`, implements `trace_debankBlock` |
+| `eth/backend.go` | Registered the `trace` namespace for the DeBank API |
+| `eth/tracers/live/pipeline.go` | Registers the pipeline tracer in `tracers.LiveDirectory` |
+| `core/rawdb/chain_freezer.go` | `--ancient.prune`: continuously prunes historical bodies and receipts |
 
 #### 4. Genesis Block Support
 
