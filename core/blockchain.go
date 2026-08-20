@@ -31,7 +31,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Chaintable/pipeline/leader"
 	"github.com/Chaintable/pipeline/tracer"
 	"github.com/Chaintable/pipeline/util"
 
@@ -1864,16 +1863,13 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 	// Set new head.
 	bc.writeHeadBlock(block)
 
-	if leader.GlobalManager != nil {
-		// 先确保 pipeline tracer 不为空，然后再判断是否需要push kafka
-		// 上一个push kafka的block, 必然存在(至少有genesis block)
+	if tracer.NodeXPusher != nil {
+		// Pipeline owns the final leader check and Kafka write gate.
+		// 上一个push kafka的block通常存在(至少有genesis block)
 		// 上一个push kafka的block比当前的head block还要新，说明有unwind回退，不需要处理, 即使是fork，等有更新的block的时候再一起push
-		isLeader := leader.GlobalManager.IsLeader()
-		leader.GlobalManager.RLock()
 		lastPushedBlock := tracer.NodeXPusher.LastPushedBlock()
-		leader.GlobalManager.RUnlock()
 
-		if tracer.NodeXPusher != nil && isLeader && lastPushedBlock.BlockNumber <= block.NumberU64() {
+		if lastPushedBlock != nil && lastPushedBlock.BlockNumber <= block.NumberU64() {
 			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
 				BlockNumber: block.NumberU64(),
 				Hash:        block.Hash(),
@@ -1897,7 +1893,9 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 			parent := bc.GetHeaderByHash(block.Header().ParentHash)
 
 			if parent.Root == block.Root() {
-				bc.logger.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
+				if bc.logger != nil && bc.logger.OnCommit != nil {
+					bc.logger.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
+				}
 			}
 
 			if blockChange != nil {
@@ -2916,13 +2914,10 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	}
 	bc.writeHeadBlock(head)
 
-	if leader.GlobalManager != nil {
-		isLeader := leader.GlobalManager.IsLeader()
-		leader.GlobalManager.RLock()
+	if tracer.NodeXPusher != nil {
 		lastPushedBlock := tracer.NodeXPusher.LastPushedBlock()
-		leader.GlobalManager.RUnlock()
 
-		if tracer.NodeXPusher != nil && isLeader && lastPushedBlock.BlockNumber <= head.NumberU64() {
+		if lastPushedBlock != nil && lastPushedBlock.BlockNumber <= head.NumberU64() {
 			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
 				BlockNumber: head.NumberU64(),
 				Hash:        head.Hash(),
@@ -2947,7 +2942,9 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 
 			if parent.Root == head.Root() {
 				log.Warn("SetCanonical parent.Root == head.Root", "parent.Root", parent.Root, "head.Root", head.Root())
-				bc.logger.OnCommit(parent.Root, head.Root(), nil, nil, nil, nil, nil, nil)
+				if bc.logger != nil && bc.logger.OnCommit != nil {
+					bc.logger.OnCommit(parent.Root, head.Root(), nil, nil, nil, nil, nil, nil)
+				}
 			}
 
 			if blockChange != nil {
