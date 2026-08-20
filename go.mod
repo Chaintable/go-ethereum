@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.2.0
-	github.com/Chaintable/pipeline v0.0.68
+	github.com/Chaintable/pipeline v0.0.68-0.20260820125142-58501de848ab
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251119083800-2aa1d4cc79d7
 	github.com/VictoriaMetrics/fastcache v1.13.0
@@ -190,3 +190,5 @@ tool (
 	golang.org/x/tools/cmd/stringer
 	google.golang.org/protobuf/cmd/protoc-gen-go
 )
+
+replace github.com/Chaintable/pipeline => /Users/jacob/Documents/debank/pipeline

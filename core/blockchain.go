@@ -1787,64 +1787,6 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	return nil
 }
 
-// 返回两个块的共同祖先，以及两个块的从共同祖先到两个块的路径,即drop和new
-func (bc *BlockChain) getCommonAncestor(blocka ptypes.BlockContext, blockb ptypes.BlockContext) (ptypes.BlockContext, []ptypes.BlockContext, []ptypes.BlockContext) {
-	var (
-		chainA, chainB []ptypes.BlockContext
-	)
-	if blockb.ParentHash == blocka.Hash {
-		return blocka, chainA, []ptypes.BlockContext{blockb}
-	}
-	for blockb.BlockNumber > blocka.BlockNumber {
-		chainB = append(chainB, blockb)
-		headerb := bc.GetHeaderByHash2(blockb.ParentHash)
-		if headerb == nil {
-			log.Crit("Failed to get header by hash", "hash", blockb.ParentHash)
-		} else {
-			blockb = ptypes.BlockContext{
-				BlockNumber: headerb.Number.Uint64(),
-				Hash:        headerb.Hash(),
-				ParentHash:  headerb.ParentHash,
-				Timestamp:   headerb.Time,
-			}
-		}
-	}
-	for blocka.Hash != blockb.Hash {
-		chainA = append(chainA, blocka)
-		headera := bc.GetHeaderByHash2(blocka.ParentHash)
-		if headera == nil {
-			log.Crit("Failed to get header by hash", "hash", blocka.ParentHash)
-		} else {
-			blocka = ptypes.BlockContext{
-				BlockNumber: headera.Number.Uint64(),
-				Hash:        headera.Hash(),
-				ParentHash:  headera.ParentHash,
-				Timestamp:   headera.Time,
-			}
-		}
-
-		chainB = append(chainB, blockb)
-		headerb := bc.GetHeaderByHash2(blockb.ParentHash)
-		if headerb == nil {
-			log.Crit("Failed to get header by hash", "hash", blockb.ParentHash)
-		} else {
-			blockb = ptypes.BlockContext{
-				BlockNumber: headerb.Number.Uint64(),
-				Hash:        headerb.Hash(),
-				ParentHash:  headerb.ParentHash,
-				Timestamp:   headerb.Time,
-			}
-		}
-	}
-	// now blocka == blockb == ancestor
-
-	// reverse chainA
-	slices.Reverse(chainA)
-	// reverse chainB
-	slices.Reverse(chainB)
-	return blocka, chainA, chainB
-}
-
 // writeBlockAndSetHead is the internal implementation of WriteBlockAndSetHead.
 // This function expects the chain mutex to be held.
 func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types.Receipt, logs []*types.Log, state *state.StateDB, emitHeadEvent bool) (status WriteStatus, err error) {
@@ -1864,47 +1806,26 @@ func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types
 	bc.writeHeadBlock(block)
 
 	if tracer.NodeXPusher != nil {
-		// Pipeline owns the final leader check and Kafka write gate.
-		// 上一个push kafka的block通常存在(至少有genesis block)
-		// 上一个push kafka的block比当前的head block还要新，说明有unwind回退，不需要处理, 即使是fork，等有更新的block的时候再一起push
-		lastPushedBlock := tracer.NodeXPusher.LastPushedBlock()
+		parent := bc.GetHeaderByHash(block.Header().ParentHash)
 
-		if lastPushedBlock != nil && lastPushedBlock.BlockNumber <= block.NumberU64() {
-			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
+		if parent.Root == block.Root() {
+			if bc.logger != nil && bc.logger.OnCommit != nil {
+				bc.logger.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
+			}
+		}
+
+		// Pipeline owns the leader check, getCommonAncestor computation, and Kafka write gate.
+		// Backup nodes return immediately without any computation.
+		err := tracer.NodeXPusher.NotifyBlockCommit(block, bc, bc.pipelineBlockFirstSeenAt([]ptypes.BlockContext{
+			{
 				BlockNumber: block.NumberU64(),
 				Hash:        block.Hash(),
 				ParentHash:  block.ParentHash(),
 				Timestamp:   block.Time(),
-			})
-			var blockChange *ptypes.BlockChangeNotification
-			if len(dropBlocks) > 0 {
-				blockChange = &ptypes.BlockChangeNotification{
-					ChangeType: 2,
-					NewBlocks:  newBlocks,
-					DropBlocks: dropBlocks,
-				}
-			} else if len(newBlocks) > 0 {
-				blockChange = &ptypes.BlockChangeNotification{
-					ChangeType: 1,
-					NewBlocks:  newBlocks,
-				}
-			}
-
-			parent := bc.GetHeaderByHash(block.Header().ParentHash)
-
-			if parent.Root == block.Root() {
-				if bc.logger != nil && bc.logger.OnCommit != nil {
-					bc.logger.OnCommit(parent.Root, block.Root(), nil, nil, nil, nil, nil, nil)
-				}
-			}
-
-			if blockChange != nil {
-				err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange, bc.pipelineBlockFirstSeenAt(blockChange.NewBlocks))
-				if err != nil {
-					log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
-				}
-				log.Info("NodeXPusher PushBlockChangeNotification", "blockChange", blockChange)
-			}
+			},
+		}))
+		if err != nil {
+			log.Error("NotifyBlockCommit error", "err", err)
 		}
 	}
 	bc.chainFeed.Send(ChainEvent{
@@ -2915,45 +2836,27 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	bc.writeHeadBlock(head)
 
 	if tracer.NodeXPusher != nil {
-		lastPushedBlock := tracer.NodeXPusher.LastPushedBlock()
+		parent := bc.GetHeaderByHash(head.Header().ParentHash)
 
-		if lastPushedBlock != nil && lastPushedBlock.BlockNumber <= head.NumberU64() {
-			_, dropBlocks, newBlocks := bc.getCommonAncestor(*lastPushedBlock, ptypes.BlockContext{
+		if parent.Root == head.Root() {
+			log.Warn("SetCanonical parent.Root == head.Root", "parent.Root", parent.Root, "head.Root", head.Root())
+			if bc.logger != nil && bc.logger.OnCommit != nil {
+				bc.logger.OnCommit(parent.Root, head.Root(), nil, nil, nil, nil, nil, nil)
+			}
+		}
+
+		// Pipeline owns the leader check, getCommonAncestor computation, and Kafka write gate.
+		// Backup nodes return immediately without any computation.
+		err := tracer.NodeXPusher.NotifyBlockCommit(head, bc, bc.pipelineBlockFirstSeenAt([]ptypes.BlockContext{
+			{
 				BlockNumber: head.NumberU64(),
 				Hash:        head.Hash(),
 				ParentHash:  head.ParentHash(),
 				Timestamp:   head.Time(),
-			})
-			var blockChange *ptypes.BlockChangeNotification
-			if len(dropBlocks) > 0 {
-				blockChange = &ptypes.BlockChangeNotification{
-					ChangeType: 2,
-					NewBlocks:  newBlocks,
-					DropBlocks: dropBlocks,
-				}
-			} else if len(newBlocks) > 0 {
-				blockChange = &ptypes.BlockChangeNotification{
-					ChangeType: 1,
-					NewBlocks:  newBlocks,
-				}
-			}
-
-			parent := bc.GetHeaderByHash(head.Header().ParentHash)
-
-			if parent.Root == head.Root() {
-				log.Warn("SetCanonical parent.Root == head.Root", "parent.Root", parent.Root, "head.Root", head.Root())
-				if bc.logger != nil && bc.logger.OnCommit != nil {
-					bc.logger.OnCommit(parent.Root, head.Root(), nil, nil, nil, nil, nil, nil)
-				}
-			}
-
-			if blockChange != nil {
-				err := tracer.NodeXPusher.PushBlockChangeNotification(blockChange, bc.pipelineBlockFirstSeenAt(blockChange.NewBlocks))
-				if err != nil {
-					log.Error("SetCanonical PushBlockChangeNotification error", "err", err)
-				}
-				log.Info("NodeXPusher PushBlockChangeNotification", "blockChange", blockChange)
-			}
+			},
+		}))
+		if err != nil {
+			log.Error("NotifyBlockCommit error", "err", err)
 		}
 	}
 
