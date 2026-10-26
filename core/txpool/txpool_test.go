@@ -58,8 +58,8 @@ func (bc *unsyncedBlockChain) SubscribeChainHeadEvent(ch chan<- core.ChainHeadEv
 	return bc.chainHeadFeed.Subscribe(ch)
 }
 
-func (bc *unsyncedBlockChain) StateAt(header *types.Header) (*state.StateDB, error) {
-	if header.Root == types.EmptyRootHash {
+func (bc *unsyncedBlockChain) StateAt(root common.Hash, number *big.Int, time uint64) (*state.StateDB, error) {
+	if root == types.EmptyRootHash {
 		return bc.statedb, nil
 	}
 	return nil, errors.New("state is not available")
