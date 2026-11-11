@@ -262,12 +262,12 @@ func (api *DebankAPI) DebankBlock(ctx context.Context, blockNrOrHash rpc.BlockNu
 	rpcTracer.OnBlockStart(block)
 
 	// Process the block using the standard processor
-	_, err = api.eth.BlockChain().Processor().Process(ctx, block, statedb, nil, vm.Config{Tracer: tracer.Hooks})
+	_, err = api.eth.BlockChain().Processor().Process(ctx, block, statedb, nil, nil, vm.Config{Tracer: tracer.Hooks}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not process block: %w", err)
 	}
 
-	root, destructs, accounts, storages, codes, err := statedb.StateDiff(config.IsEIP158(block.Number()))
+	root, destructs, accounts, storages, codes, err := statedb.StateDiff(config.Rules(block.Number(), block.Difficulty().Sign() == 0, block.Time()))
 	if err != nil {
 		return nil, fmt.Errorf("could not get state diff: %w", err)
 	}

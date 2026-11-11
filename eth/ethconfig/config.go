@@ -51,7 +51,7 @@ var FullNodeGPO = gasprice.Config{
 
 // Defaults contains default settings for use on the Ethereum main net.
 var Defaults = Config{
-	HistoryMode:             history.KeepAll,
+	HistoryMode:             history.HistoryPolicy{Mode: history.KeepAll},
 	SyncMode:                SnapSync,
 	NetworkId:               0, // enable auto configuration of networkID == chainID
 	TxLookupLimit:           2350000,
@@ -75,6 +75,7 @@ var Defaults = Config{
 	RPCEVMTimeout:           5 * time.Second,
 	GPO:                     FullNodeGPO,
 	RPCTxFeeCap:             1, // 1 ether
+	EngineMaxReorgDepth:     32,
 	TxSyncDefaultTimeout:    20 * time.Second,
 	TxSyncMaxTimeout:        1 * time.Minute,
 	SlowBlockThreshold:      -1, // Disabled by default; set via --debug.logslowblock flag
@@ -95,7 +96,7 @@ type Config struct {
 	SyncMode  SyncMode
 
 	// HistoryMode configures chain history retention.
-	HistoryMode history.HistoryMode
+	HistoryMode history.HistoryPolicy
 
 	// PruneAncient enables continuous pruning of historical block data. Block
 	// bodies and receipts are dropped once they age out of the most recent
@@ -110,8 +111,9 @@ type Config struct {
 	SnapDiscoveryURLs []string
 
 	// State options.
-	NoPruning  bool // Whether to disable pruning and flush everything to disk
-	NoPrefetch bool // Whether to disable prefetching and only load state on demand
+	NoPruning         bool // Whether to disable pruning and flush everything to disk
+	NoPrefetch        bool // Whether to disable prefetching and only load state on demand
+	NoPrecompileCache bool // Whether to disable precompile result caching
 
 	// Deprecated: use 'TransactionHistory' instead.
 	TxLookupLimit uint64 `toml:",omitempty"` // The maximum number of blocks from head whose tx indices are reserved.
@@ -188,13 +190,11 @@ type Config struct {
 	// Generate execution witnesses and self-check against them (testing purpose)
 	StatelessSelfValidation bool
 
-	// Enables tracking of state size
-	EnableStateSizeTracking bool
-
-	// SnapV2 enables the experimental snap/2 (EIP-8189, BAL-based) sync protocol:
-	// the node advertises snap/2 on the wire and uses the snap/2 state syncer.
-	// It is not safe to enable on public networks yet.
-	SnapV2 bool
+	// SnapV2 selects the snap/2 (EIP-8189, BAL-based) state syncer. Unset means
+	// automatic: snap/2 once Amsterdam has been active long enough for the sync
+	// pivot to carry block access lists. Enabling it before then falls back to
+	// snap/1. snap/2 is served either way, except while syncing via snap/1.
+	SnapV2 *bool `toml:",omitempty"`
 
 	// Enables VM tracing
 	VMTrace           string
@@ -210,8 +210,16 @@ type Config struct {
 	// send-transaction variants. The unit is ether.
 	RPCTxFeeCap float64
 
+	// EngineMaxReorgDepth is the maximum depth the chain head can be rewound
+	// to an already-canonical ancestor by engine API forkchoiceUpdated calls
+	// (0 = no limit).
+	EngineMaxReorgDepth uint64
+
 	// OverrideOsaka (TODO: remove after the fork)
 	OverrideOsaka *uint64 `toml:",omitempty"`
+
+	// OverrideAmsterdam (TODO: remove after the fork)
+	OverrideAmsterdam *uint64 `toml:",omitempty"`
 
 	// OverrideBPO1 (TODO: remove after the fork)
 	OverrideBPO1 *uint64 `toml:",omitempty"`

@@ -58,7 +58,7 @@ func newTestCache(t *testing.T, txConfig []txSpec) *testCache {
 	if err := os.MkdirAll(filepath.Join(storage, pendingTransactionStore), 0700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	store, err := billy.Open(billy.Options{Path: filepath.Join(storage, pendingTransactionStore)}, newSlotter(params.BlobTxMaxBlobs), nil)
+	store, err := billy.Open(billy.Options{Path: filepath.Join(storage, pendingTransactionStore)}, newSlotterEIP7594(params.BlobTxMaxBlobs), nil)
 	if err != nil {
 		t.Fatalf("billy open: %v", err)
 	}
@@ -70,7 +70,7 @@ func newTestCache(t *testing.T, txConfig []txSpec) *testCache {
 	)
 	for _, s := range txConfig {
 		key, _ := crypto.GenerateKey()
-		tx := makeMultiBlobTx(0, s.tip, 1_000_000, 1_000_000, s.blobs, offset, key, types.BlobSidecarVersion1)
+		tx := makeMultiBlobTx(0, s.tip, 1_000_000, 1_000_000, s.blobs, offset, key)
 		if _, err := store.Put(encodeForPool(tx)); err != nil {
 			t.Fatalf("store put: %v", err)
 		}
@@ -84,7 +84,7 @@ func newTestCache(t *testing.T, txConfig []txSpec) *testCache {
 	for _, a := range addrs {
 		statedb.AddBalance(a, uint256.NewInt(1_000_000_000_000), tracing.BalanceChangeUnspecified)
 	}
-	statedb.Commit(0, true, false)
+	statedb.Commit(params.Rules{IsEIP158: true}, 0)
 
 	cancunTime := uint64(0)
 	config := &params.ChainConfig{
@@ -94,7 +94,7 @@ func newTestCache(t *testing.T, txConfig []txSpec) *testCache {
 		CancunTime:  &cancunTime,
 		OsakaTime:   &cancunTime,
 		BlobScheduleConfig: &params.BlobScheduleConfig{
-			Osaka: &params.BlobConfig{
+			Cancun: &params.BlobConfig{
 				Target:         1,
 				Max:            1,
 				UpdateFraction: params.DefaultCancunBlobConfig.UpdateFraction,
@@ -143,10 +143,13 @@ func newTestCache(t *testing.T, txConfig []txSpec) *testCache {
 func (tc *testCache) inject(t *testing.T, spec txSpec) []common.Hash {
 	t.Helper()
 	key, _ := crypto.GenerateKey()
-	tx := makeMultiBlobTx(0, spec.tip, 1_000_000, 1_000_000, spec.blobs, tc.offset, key, types.BlobSidecarVersion1)
+	tx := makeMultiBlobTx(0, spec.tip, 1_000_000, 1_000_000, spec.blobs, tc.offset, key)
 	tc.offset += spec.blobs
 
-	ptx := newBlobTxForPool(tx)
+	ptx, err := newBlobTxForPool(tx)
+	if err != nil {
+		t.Fatalf("new blob tx for pool: %v", err)
+	}
 
 	tc.blobpool.lock.Lock()
 	defer tc.blobpool.lock.Unlock()
@@ -155,7 +158,7 @@ func (tc *testCache) inject(t *testing.T, spec txSpec) []common.Hash {
 	if err != nil {
 		t.Fatalf("store put: %v", err)
 	}
-	meta := newBlobTxMeta(id, ptx.TxSize(), tc.blobpool.store.Size(id), ptx)
+	meta := newBlobTxMeta(id, tc.blobpool.store.Size(id), ptx)
 	addr := crypto.PubkeyToAddress(key.PublicKey)
 	tc.blobpool.index[addr] = append(tc.blobpool.index[addr], meta)
 	tc.blobpool.lookup.track(meta)
@@ -278,6 +281,36 @@ func TestCacheGetBlobs(t *testing.T) {
 	}
 	tc.wait(t, 0)
 	tc.expectEntries(t, tc.vhashes[1]...)
+}
+
+// TestCacheGetCellsBlobModeFallback checks that GetCells falls back to the
+// blobpool for entries that were cached in blob mode (without cells) instead
+// of serving null cells for a blob that is available in the pool.
+func TestCacheGetCellsBlobModeFallback(t *testing.T) {
+	tc := newTestCache(t, []txSpec{
+		{blobs: 1, tip: 300},
+	})
+	tc.expectEntries(t, tc.vhashes[0]...) // blob-mode entries, no cells
+
+	cells, proofs, err := tc.GetCells(tc.vhashes[0], types.CustodyBitmapAll)
+	if err != nil {
+		t.Fatalf("GetCells: %v", err)
+	}
+	for i := range cells {
+		if len(cells[i]) == 0 {
+			t.Errorf("no cells returned for blob %d", i)
+		}
+		for j, cell := range cells[i] {
+			if cell == nil {
+				t.Errorf("cell %d of blob %d missing in GetCells response", j, i)
+			}
+		}
+		for j, proof := range proofs[i] {
+			if proof == nil {
+				t.Errorf("proof %d of blob %d missing in GetCells response", j, i)
+			}
+		}
+	}
 }
 
 // TestCacheTopKRefresh verifies that when a more profitable tx appears in the
