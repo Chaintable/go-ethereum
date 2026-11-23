@@ -53,13 +53,12 @@ func (t *frameTracer) CaptureExit(output []byte, gasUsed uint64, err error) {
 }
 
 // STATICCALL identity precompile, CALL a reverting contract, CALL with value
-// the caller does not have, CREATE an empty contract.
+// the caller does not have, CREATE an empty contract, SELFDESTRUCT to 0xdd.
 var frameCode = common.Hex2Bytes(
 	"6000600060006000" + "6004" + "61ffff" + "fa50" +
 		"6000600060006000600060bb61ffff" + "f150" +
 		"6000600060006000600160cc61ffff" + "f150" +
-		"6000600053" + "600160006000f050" +
-		"00")
+		"6000600053" + "600160006000f050" + "60ddff")
 
 func TestCallFrameHooks(t *testing.T) {
 	tracer := &frameTracer{}
@@ -82,6 +81,7 @@ func TestCallFrameHooks(t *testing.T) {
 		{typ: vm.CALL, to: common.HexToAddress("0xbb"), value: new(big.Int), gasUsed: 6, err: vm.ErrExecutionReverted},
 		{typ: vm.CALL, to: common.HexToAddress("0xcc"), value: big.NewInt(1), gasUsed: 0, err: vm.ErrInsufficientBalance},
 		{typ: vm.CREATE, to: crypto.CreateAddress(contract, 0), value: new(big.Int)},
+		{typ: vm.SELFDESTRUCT, to: common.HexToAddress("0xdd"), value: new(big.Int)},
 	}
 	if len(tracer.frames) != len(want) {
 		t.Fatalf("got %d frames, want %d", len(tracer.frames), len(want))
