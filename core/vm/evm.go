@@ -220,6 +220,14 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		t.CaptureEnter(CALL, caller.Address(), addr, input, gas, value)
 		defer func(startGas uint64) { t.CaptureExit(ret, startGas-leftOverGas, err) }(gas)
 	}
+	// The root frame is reported before the checks below, so that a failed
+	// pre-check such as insufficient balance still has a frame.
+	if evm.vmConfig.Debug && evm.depth == 0 {
+		evm.vmConfig.Tracer.CaptureStart(evm, caller.Address(), addr, false, input, gas, value)
+		defer func(startGas uint64, startTime time.Time) {
+			evm.vmConfig.Tracer.CaptureEnd(ret, startGas-leftOverGas, time.Since(startTime), err)
+		}(gas, time.Now())
+	}
 	if evm.vmConfig.NoRecursion && evm.depth > 0 {
 		return nil, gas, nil
 	}
@@ -236,24 +244,12 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 
 	if !evm.StateDB.Exist(addr) {
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
-			// Calling a non existing account, don't do anything, but ping the tracer
-			if evm.vmConfig.Debug && evm.depth == 0 {
-				evm.vmConfig.Tracer.CaptureStart(evm, caller.Address(), addr, false, input, gas, value)
-				evm.vmConfig.Tracer.CaptureEnd(ret, 0, 0, nil)
-			}
+			// Calling a non existing account, don't do anything
 			return nil, gas, nil
 		}
 		evm.StateDB.CreateAccount(addr)
 	}
 	evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
-
-	// Capture the tracer start/end events in debug mode
-	if evm.vmConfig.Debug && evm.depth == 0 {
-		evm.vmConfig.Tracer.CaptureStart(evm, caller.Address(), addr, false, input, gas, value)
-		defer func(startGas uint64, startTime time.Time) { // Lazy evaluation of the parameters
-			evm.vmConfig.Tracer.CaptureEnd(ret, startGas-gas, time.Since(startTime), err)
-		}(gas, time.Now())
-	}
 
 	if isPrecompile {
 		ret, gas, err = RunPrecompiledContract(p, input, gas)
@@ -344,7 +340,12 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 // code with the caller as context and the caller is set to the caller of the caller.
 func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []byte, gas uint64) (ret []byte, leftOverGas uint64, err error) {
 	if t := evm.frameTracer(); t != nil {
-		t.CaptureEnter(DELEGATECALL, caller.Address(), addr, input, gas, nil)
+		// DELEGATECALL inherits value from the parent call, as later geth reports.
+		var value *big.Int
+		if parent, ok := caller.(*Contract); ok {
+			value = parent.Value()
+		}
+		t.CaptureEnter(DELEGATECALL, caller.Address(), addr, input, gas, value)
 		defer func(startGas uint64) { t.CaptureExit(ret, startGas-leftOverGas, err) }(gas)
 	}
 	if evm.vmConfig.NoRecursion && evm.depth > 0 {
