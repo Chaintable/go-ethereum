@@ -26,9 +26,12 @@ type frame struct {
 }
 
 type frameTracer struct {
-	roots  int
-	frames []*frame
-	open   []*frame
+	roots       int
+	rootEnds    int
+	rootGasUsed uint64
+	rootErr     error
+	frames      []*frame
+	open        []*frame
 }
 
 func (t *frameTracer) CaptureStart(*vm.EVM, common.Address, common.Address, bool, []byte, uint64, *big.Int) {
@@ -38,7 +41,10 @@ func (t *frameTracer) CaptureState(*vm.EVM, uint64, vm.OpCode, uint64, uint64, *
 }
 func (t *frameTracer) CaptureFault(*vm.EVM, uint64, vm.OpCode, uint64, uint64, *vm.ScopeContext, int, error) {
 }
-func (t *frameTracer) CaptureEnd([]byte, uint64, time.Duration, error) {}
+func (t *frameTracer) CaptureEnd(_ []byte, gasUsed uint64, _ time.Duration, err error) {
+	t.rootEnds++
+	t.rootGasUsed, t.rootErr = gasUsed, err
+}
 
 func (t *frameTracer) CaptureEnter(typ vm.OpCode, from, to common.Address, input []byte, gas uint64, value *big.Int) {
 	f := &frame{typ: typ, to: to, value: value}
@@ -110,5 +116,28 @@ func TestCallFrameHooksNeedDebug(t *testing.T) {
 	}
 	if len(tracer.frames) != 0 || tracer.roots != 0 {
 		t.Fatalf("tracer called without Debug: %d frames, %d roots", len(tracer.frames), tracer.roots)
+	}
+}
+
+// A top-level CREATE whose address is taken fails before running any code;
+// the root frame must still be reported.
+func TestRootCreateCollisionFrame(t *testing.T) {
+	tracer := &frameTracer{}
+	cfg := &Config{GasLimit: 100000, EVMConfig: vm.Config{Debug: true, Tracer: tracer}}
+	setDefaults(cfg)
+	cfg.State = newState()
+	cfg.State.SetNonce(crypto.CreateAddress(cfg.Origin, 0), 1)
+	_, _, leftOver, err := Create(common.Hex2Bytes("00"), cfg)
+	if err != vm.ErrContractAddressCollision {
+		t.Fatalf("got %v, want address collision", err)
+	}
+	if tracer.roots != 1 || tracer.rootEnds != 1 {
+		t.Fatalf("root start/end called %d/%d times", tracer.roots, tracer.rootEnds)
+	}
+	if tracer.rootErr != vm.ErrContractAddressCollision || tracer.rootGasUsed != 100000-leftOver {
+		t.Fatalf("root end: %v, gas used %d, left over %d", tracer.rootErr, tracer.rootGasUsed, leftOver)
+	}
+	if len(tracer.frames) != 0 {
+		t.Fatalf("%d nested frames", len(tracer.frames))
 	}
 }

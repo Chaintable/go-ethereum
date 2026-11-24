@@ -449,6 +449,14 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		t.CaptureEnter(typ, caller.Address(), address, codeAndHash.code, gas, value)
 		defer func(startGas uint64) { t.CaptureExit(ret, startGas-leftOverGas, err) }(gas)
 	}
+	// The root frame is reported before the checks below, so that a failed
+	// pre-check such as an address collision still has a frame.
+	if evm.vmConfig.Debug && evm.depth == 0 {
+		evm.vmConfig.Tracer.CaptureStart(evm, caller.Address(), address, true, codeAndHash.code, gas, value)
+		defer func(startGas uint64, startTime time.Time) {
+			evm.vmConfig.Tracer.CaptureEnd(ret, startGas-leftOverGas, time.Since(startTime), err)
+		}(gas, time.Now())
+	}
 	// Depth check execution. Fail if we're trying to execute above the
 	// limit.
 	if evm.depth > int(params.CallCreateDepth) {
@@ -486,11 +494,6 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		return nil, address, gas, nil
 	}
 
-	if evm.vmConfig.Debug && evm.depth == 0 {
-		evm.vmConfig.Tracer.CaptureStart(evm, caller.Address(), address, true, codeAndHash.code, gas, value)
-	}
-	start := time.Now()
-
 	ret, err = run(evm, contract, nil, false)
 
 	// Check whether the max code size has been exceeded, assign err if the case.
@@ -521,9 +524,6 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		}
 	}
 
-	if evm.vmConfig.Debug && evm.depth == 0 {
-		evm.vmConfig.Tracer.CaptureEnd(ret, gas-contract.Gas, time.Since(start), err)
-	}
 	return ret, address, contract.Gas, err
 }
 
