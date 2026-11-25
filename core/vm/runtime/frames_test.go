@@ -143,3 +143,43 @@ func TestRootCreateCollisionFrame(t *testing.T) {
 		t.Fatalf("%d nested frames", len(tracer.frames))
 	}
 }
+
+// A top-level CALL whose value exceeds the sender's balance fails before
+// running any code; the root frame must still be reported.
+func TestRootCallInsufficientBalanceFrame(t *testing.T) {
+	tracer := &frameTracer{}
+	cfg := &Config{GasLimit: 100000, Value: big.NewInt(1), EVMConfig: vm.Config{Debug: true, Tracer: tracer}}
+	setDefaults(cfg)
+	cfg.State = newState()
+	_, leftOver, err := Call(common.HexToAddress("0xbb"), nil, cfg)
+	if err != vm.ErrInsufficientBalance {
+		t.Fatalf("got %v, want insufficient balance", err)
+	}
+	if tracer.roots != 1 || tracer.rootEnds != 1 {
+		t.Fatalf("root start/end called %d/%d times", tracer.roots, tracer.rootEnds)
+	}
+	if tracer.rootErr != vm.ErrInsufficientBalance || tracer.rootGasUsed != 100000-leftOver {
+		t.Fatalf("root end: %v, gas used %d, left over %d", tracer.rootErr, tracer.rootGasUsed, leftOver)
+	}
+}
+
+// A DELEGATECALL frame reports the value it inherits from its parent.
+func TestDelegateCallFrameInheritsValue(t *testing.T) {
+	tracer := &frameTracer{}
+	cfg := &Config{GasLimit: 100000, Value: big.NewInt(5), EVMConfig: vm.Config{Debug: true, Tracer: tracer}}
+	setDefaults(cfg)
+	cfg.State = newState()
+	cfg.State.AddBalance(cfg.Origin, big.NewInt(10))
+	proxy := common.HexToAddress("0xaa")
+	cfg.State.SetCode(proxy, common.Hex2Bytes("6000600060006000"+"60bb"+"61ffff"+"f450"+"00"))
+	cfg.State.SetCode(common.HexToAddress("0xbb"), common.Hex2Bytes("00"))
+	if _, _, err := Call(proxy, nil, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(tracer.frames) != 1 || tracer.frames[0].typ != vm.DELEGATECALL {
+		t.Fatalf("got %d frames", len(tracer.frames))
+	}
+	if v := tracer.frames[0].value; v == nil || v.Cmp(big.NewInt(5)) != 0 {
+		t.Fatalf("DELEGATECALL value %v, want 5", v)
+	}
+}
