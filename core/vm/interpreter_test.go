@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -74,4 +75,16 @@ func TestLoopInterrupt(t *testing.T) {
 		}
 	}
 
+}
+
+func TestExtraEipsLeaveInstructionSetUnchanged(t *testing.T) {
+	sstore, sload := *londonInstructionSet[SSTORE], *londonInstructionSet[SLOAD]
+	in := NewEVMInterpreter(&EVM{chainRules: params.Rules{IsLondon: true}}, Config{ExtraEips: []int{2929, 2200, 1884, 1344}})
+	if londonInstructionSet[SLOAD].constantGas != sload.constantGas ||
+		fmt.Sprintf("%p", londonInstructionSet[SSTORE].dynamicGas) != fmt.Sprintf("%p", sstore.dynamicGas) {
+		t.Fatal("extra EIPs changed the shared instruction set")
+	}
+	if in.cfg.JumpTable[SLOAD].constantGas != params.SloadGasEIP1884 {
+		t.Fatalf("interpreter SLOAD constant gas %d, want %d", in.cfg.JumpTable[SLOAD].constantGas, params.SloadGasEIP1884)
+	}
 }
