@@ -98,18 +98,17 @@ func (t *prestateTracer) CaptureStart(env *vm.EVM, from common.Address, to commo
 	t.lookupAccount(to)
 	t.lookupAccount(env.Context.Coinbase)
 
-	// The recipient balance includes the value transferred.
-	toBal := new(big.Int).Sub(t.pre[to].Balance, value)
-	t.pre[to].Balance = toBal
-
-	// The sender balance is after reducing: value and gasLimit.
-	// We need to re-add them to get the pre-tx balance.
+	// The root frame is reported before the value transfer and, for a create,
+	// before the nonce increment. Only the gas purchase and the nonce
+	// increment of a call have happened yet.
 	fromBal := new(big.Int).Set(t.pre[from].Balance)
 	gasPrice := env.TxContext.GasPrice
 	consumedGas := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(t.gasLimit))
-	fromBal.Add(fromBal, new(big.Int).Add(value, consumedGas))
+	fromBal.Add(fromBal, consumedGas)
 	t.pre[from].Balance = fromBal
-	t.pre[from].Nonce--
+	if !create {
+		t.pre[from].Nonce--
+	}
 
 	if create && t.config.DiffMode {
 		t.created[to] = true
