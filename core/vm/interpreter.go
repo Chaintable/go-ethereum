@@ -115,6 +115,12 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 		default:
 			jt = frontierInstructionSet
 		}
+		// EnableEIP edits operations in place, and jt still points at the
+		// shared instruction set; copy them so concurrent EVMs never observe
+		// a half-applied table.
+		if len(cfg.ExtraEips) > 0 {
+			jt = copyJumpTable(&jt)
+		}
 		for i, eip := range cfg.ExtraEips {
 			if err := EnableEIP(eip, &jt); err != nil {
 				// Disable it, so caller can check if it's activated or not
@@ -305,4 +311,16 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 // run by the current interpreter.
 func (in *EVMInterpreter) CanRun(code []byte) bool {
 	return true
+}
+
+// copyJumpTable returns a jump table with its own copy of every operation.
+func copyJumpTable(src *JumpTable) JumpTable {
+	var dst JumpTable
+	for i, op := range src {
+		if op != nil {
+			cp := *op
+			dst[i] = &cp
+		}
+	}
+	return dst
 }
