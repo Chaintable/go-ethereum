@@ -164,6 +164,23 @@ func (evm *EVM) SetBlockContext(blockCtx BlockContext) {
 	evm.chainRules = evm.chainConfig.Rules(num, blockCtx.Random != nil, timestamp)
 }
 
+// traceRejectedFrame reports a call that returned before the normal frame hooks.
+func (evm *EVM) traceRejectedFrame(typ OpCode, from ContractRef, to common.Address, input []byte, gas, used uint64, value *big.Int, err error) {
+	if _, ok := evm.Config.Tracer.(interface{ TraceRejectedFrames() }); !ok {
+		return
+	}
+	if evm.depth == 0 && (typ == CALL || typ == CREATE || typ == CREATE2) {
+		evm.Config.Tracer.CaptureStart(evm, from.Address(), to, typ != CALL, input, gas, value)
+		evm.Config.Tracer.CaptureEnd(nil, used, err)
+	} else {
+		if typ == DELEGATECALL {
+			value = from.(*Contract).Value()
+		}
+		evm.Config.Tracer.CaptureEnter(typ, from.Address(), to, input, gas, value)
+		evm.Config.Tracer.CaptureExit(nil, used, err)
+	}
+}
+
 // Call executes the contract associated with the addr with the given input as
 // parameters. It also handles any necessary value transfer required and takes
 // the necessary steps to create accounts and reverses the state in case of an
@@ -171,10 +188,12 @@ func (evm *EVM) SetBlockContext(blockCtx BlockContext) {
 func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas uint64, value *big.Int) (ret []byte, leftOverGas uint64, err error) {
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
+		evm.traceRejectedFrame(CALL, caller, addr, input, gas, 0, value, ErrDepth)
 		return nil, gas, ErrDepth
 	}
 	// Fail if we're trying to transfer more than the available balance
 	if value.Sign() != 0 && !evm.Context.CanTransfer(evm.StateDB, caller.Address(), value) {
+		evm.traceRejectedFrame(CALL, caller, addr, input, gas, 0, value, ErrInsufficientBalance)
 		return nil, gas, ErrInsufficientBalance
 	}
 	snapshot := evm.StateDB.Snapshot()
@@ -259,6 +278,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, gas uint64, value *big.Int) (ret []byte, leftOverGas uint64, err error) {
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
+		evm.traceRejectedFrame(CALLCODE, caller, addr, input, gas, 0, value, ErrDepth)
 		return nil, gas, ErrDepth
 	}
 	// Fail if we're trying to transfer more than the available balance
@@ -266,6 +286,7 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 	// if caller doesn't have enough balance, it would be an error to allow
 	// over-charging itself. So the check here is necessary.
 	if !evm.Context.CanTransfer(evm.StateDB, caller.Address(), value) {
+		evm.traceRejectedFrame(CALLCODE, caller, addr, input, gas, 0, value, ErrInsufficientBalance)
 		return nil, gas, ErrInsufficientBalance
 	}
 	snapshot := evm.StateDB.Snapshot()
@@ -307,6 +328,7 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []byte, gas uint64) (ret []byte, leftOverGas uint64, err error) {
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
+		evm.traceRejectedFrame(DELEGATECALL, caller, addr, input, gas, 0, nil, ErrDepth)
 		return nil, gas, ErrDepth
 	}
 	snapshot := evm.StateDB.Snapshot()
@@ -350,6 +372,7 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte, gas uint64) (ret []byte, leftOverGas uint64, err error) {
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
+		evm.traceRejectedFrame(STATICCALL, caller, addr, input, gas, 0, nil, ErrDepth)
 		return nil, gas, ErrDepth
 	}
 	// We take a snapshot here. This is a bit counter-intuitive, and could probably be skipped.
@@ -417,13 +440,16 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// Depth check execution. Fail if we're trying to execute above the
 	// limit.
 	if evm.depth > int(params.CallCreateDepth) {
+		evm.traceRejectedFrame(typ, caller, address, codeAndHash.code, gas, 0, value, ErrDepth)
 		return nil, common.Address{}, gas, ErrDepth
 	}
 	if !evm.Context.CanTransfer(evm.StateDB, caller.Address(), value) {
+		evm.traceRejectedFrame(typ, caller, address, codeAndHash.code, gas, 0, value, ErrInsufficientBalance)
 		return nil, common.Address{}, gas, ErrInsufficientBalance
 	}
 	nonce := evm.StateDB.GetNonce(caller.Address())
 	if nonce+1 < nonce {
+		evm.traceRejectedFrame(typ, caller, address, codeAndHash.code, gas, 0, value, ErrNonceUintOverflow)
 		return nil, common.Address{}, gas, ErrNonceUintOverflow
 	}
 	evm.StateDB.SetNonce(caller.Address(), nonce+1)
@@ -435,6 +461,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// Ensure there's no existing contract already at the designated address
 	contractHash := evm.StateDB.GetCodeHash(address)
 	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != emptyCodeHash) {
+		evm.traceRejectedFrame(typ, caller, address, codeAndHash.code, gas, gas, value, ErrContractAddressCollision)
 		return nil, common.Address{}, 0, ErrContractAddressCollision
 	}
 	// Create a new account on the state
